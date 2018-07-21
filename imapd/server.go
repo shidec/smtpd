@@ -249,11 +249,7 @@ func (s *Server) handleClient(c *Client) {
 
 		line, err := c.readLine()
 		if err == nil {
-			log.LogInfo("Sx:line:" + line)
 			if hdr, cmd, arg, ok := c.parseCmd(line); ok {
-				log.LogInfo("Sx:hdr:" + hdr)
-				log.LogInfo("Sx:cmd:" + cmd)
-				log.LogInfo("Sx:arg:" + arg)
 				c.handle(hdr, cmd, arg, line)
 			}
 		} else {
@@ -273,7 +269,9 @@ func (s *Server) handleClient(c *Client) {
 			break
 		}
 
+		log.LogInfo("Sx:kill_time:", c.kill_time)
 		if c.kill_time > 1 || c.errors > 3 {
+			log.LogInfo("Sx:killing")
 			return
 		}
 	}
@@ -316,9 +314,9 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 		c.dataHandler(cmd, arg)
 		//return
 	case "LOGOUT":
-		c.Write("", "BYE IMAP4rev1 server logging out")
+		c.Write("", "* BYE IMAP4rev1 server logging out\r\n")
 		c.state = 1
-		c.Write("", hdr + " OK LOGOUT completed")
+		c.Write("", hdr + " OK LOGOUT completed\r\n")
 		c.server.killClient(c)
 		//return
 	case "AUTH":
@@ -341,13 +339,20 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 
 // GREET state -> waiting for HELO
 func (c *Client) loginHandler(hdr string, cmd string, arg string) {
-	sp := strings.Index(arg, " ")
-	username := arg[0:(sp - 1)]
-	passwd := arg[(sp + 1):]
-	log.LogInfo(username + ":" + passwd)
+	arg = strings.Replace(arg, "\"", "", -1)
+	sp0 := strings.Index(arg, "@")
+	sp1 := strings.Index(arg, " ")
+	var username string
+	if sp0 > 0 {
+		username = strings.Trim(arg[0:sp0], " ")
+	}else{
+		username = strings.Trim(arg[0:sp1], " ")
+	}
+	
+	passwd := strings.Trim(arg[(sp1 + 1):], " ")
 	user, err := c.server.Store.Login(username, passwd)
 	if user == nil && err != nil {
-		c.Write("", "NO Incorrect username/password")
+		c.Write("", hdr + " NO Incorrect username/password")
 	}else{
 		c.state = 2
 		c.Write("", hdr + " OK Authenticated")
@@ -355,8 +360,8 @@ func (c *Client) loginHandler(hdr string, cmd string, arg string) {
 }
 
 func (c *Client) capabilityHandler(hdr string, cmd string, arg string) {
-	c.Write("", "CAPABILITY IMAP4rev1 AUTH=PLAIN")
-	c.Write("", hdr + "OK CAPABILITY completed")
+	c.Write("", "* CAPABILITY IMAP4rev1 AUTH=PLAIN")
+	c.Write("", hdr + " OK CAPABILITY completed")
 }	
 
 func (c *Client) authHandler(cmd string, arg string) {
@@ -642,9 +647,9 @@ func (c *Client) parseCmd(line string) (hdr string, cmd string, arg string, ok b
 	scmd := line[(sp + 1):]
 	sp2 := strings.Index(scmd, " ")
 	if(sp2 >= 0){
-		return shdr, scmd[0 : (sp2 - 1)], scmd[(sp2 + 1):], true
+		return shdr, strings.ToUpper(scmd[0:sp2]), scmd[(sp2 + 1):], true
 	}else{
-		return shdr, scmd, "", true
+		return shdr, strings.ToUpper(scmd), "", true
 	}
 	
 }
