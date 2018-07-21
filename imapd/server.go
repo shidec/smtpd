@@ -239,16 +239,22 @@ func (s *Server) handleClient(c *Client) {
 
 	// This is our command reading loop
 	for i := 0; i < 100; i++ {
+		/*
 		if c.state == 2 {
 			// Special case, does not use IMAP command format
 			c.processData()
 			continue
 		}
+		*/
 
 		line, err := c.readLine()
 		if err == nil {
-			if cmd, arg, ok := c.parseCmd(line); ok {
-				c.handle(cmd, arg, line)
+			log.LogInfo("Sx:line:" + line)
+			if hdr, cmd, arg, ok := c.parseCmd(line); ok {
+				log.LogInfo("Sx:hdr:" + hdr)
+				log.LogInfo("Sx:cmd:" + cmd)
+				log.LogInfo("Sx:arg:" + arg)
+				c.handle(hdr, cmd, arg, line)
 			}
 		} else {
 			// readLine() returned an error
@@ -276,7 +282,7 @@ func (s *Server) handleClient(c *Client) {
 }
 
 // Commands are dispatched to the appropriate handler functions.
-func (c *Client) handle(cmd string, arg string, line string) {
+func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 	c.logTrace("In state %d, got command '%s', args '%s'", c.state, cmd, arg)
 
 	// Check against valid IMAP commands
@@ -291,19 +297,11 @@ func (c *Client) handle(cmd string, arg string, line string) {
 	}
 
 	switch cmd {
-	case "SEND", "SOML", "SAML", "EXPN", "HELP", "TURN":
-		// These commands are not implemented in any state
-		c.Write("502", fmt.Sprintf("%v command not implemented", cmd))
-		c.logWarn("Command %v not implemented by Gsmtpd", cmd)
+	case "LOGIN":
+		c.loginHandler(hdr, cmd, arg)
 		//return
-	case "HELO":
-		c.greetHandler(cmd, arg)
-		//return
-	case "EHLO":
-		c.greetHandler(cmd, arg)
-		//return
-	case "VRFY":
-		c.Write("252", "Cannot VRFY user, but will accept message")
+	case "CAPABILITY":
+		c.capabilityHandler(hdr, cmd, arg)
 		//return
 	case "NOOP":
 		c.Write("250", "I have sucessfully done nothing")
@@ -317,8 +315,10 @@ func (c *Client) handle(cmd string, arg string, line string) {
 	case "DATA":
 		c.dataHandler(cmd, arg)
 		//return
-	case "QUIT":
-		c.Write("221", "Goodnight and good luck")
+	case "LOGOUT":
+		c.Write("", "BYE IMAP4rev1 server logging out")
+		c.state = 1
+		c.Write("", hdr + " OK LOGOUT completed")
 		c.server.killClient(c)
 		//return
 	case "AUTH":
@@ -340,36 +340,24 @@ func (c *Client) handle(cmd string, arg string, line string) {
 }
 
 // GREET state -> waiting for HELO
-func (c *Client) greetHandler(cmd string, arg string) {
-	switch cmd {
-	case "HELO":
-		domain, err := parseHelloArgument(arg)
-		if err != nil {
-			c.Write("501", "Domain/address argument required for HELO")
-			return
-		}
-		c.helo = domain
-		c.Write("250", fmt.Sprintf("Hello %s", domain))
-		c.state = 1
-	case "EHLO":
-		domain, err := parseHelloArgument(arg)
-		if err != nil {
-			c.Write("501", "Domain/address argument required for EHLO")
-			return
-		}
-
-		if c.server.TLSConfig != nil && !c.tls_on {
-			c.Write("250", "Hello "+domain+"["+c.remoteHost+"]", "PIPELINING", "8BITMIME", "STARTTLS", "AUTH EXTERNAL CRAM-MD5 LOGIN PLAIN", fmt.Sprintf("SIZE %v", c.server.maxMessageBytes))
-			//c.Write("250", "Hello "+domain+"["+c.remoteHost+"]", "8BITMIME", fmt.Sprintf("SIZE %v", c.server.maxMessageBytes), "HELP")
-		} else {
-			c.Write("250", "Hello "+domain+"["+c.remoteHost+"]", "PIPELINING", "8BITMIME", "AUTH EXTERNAL CRAM-MD5 LOGIN PLAIN", fmt.Sprintf("SIZE %v", c.server.maxMessageBytes))
-		}
-		c.helo = domain
-		c.state = 1
-	default:
-		c.ooSeq(cmd)
+func (c *Client) loginHandler(hdr string, cmd string, arg string) {
+	sp := strings.Index(arg, " ")
+	username := arg[0:(sp - 1)]
+	passwd := arg[(sp + 1):]
+	log.LogInfo(username + ":" + passwd)
+	user, err := c.server.Store.Login(username, passwd)
+	if user == nil && err != nil {
+		c.Write("", "NO Incorrect username/password")
+	}else{
+		c.state = 2
+		c.Write("", hdr + " OK Authenticated")
 	}
 }
+
+func (c *Client) capabilityHandler(hdr string, cmd string, arg string) {
+	c.Write("", "CAPABILITY IMAP4rev1 AUTH=PLAIN")
+	c.Write("", hdr + "OK CAPABILITY completed")
+}	
 
 func (c *Client) authHandler(cmd string, arg string) {
 	if cmd == "AUTH" {
@@ -562,94 +550,6 @@ func (c *Client) handleXCLIENT(cmd string, arg string, line string) {
 	return
 }
 
-func (c *Client) processData() {
-	var msg string
-
-	for {
-		buf := make([]byte, 1024)
-		n, err := c.conn.Read(buf)
-
-		if n == 0 {
-			c.logInfo("Connection closed by remote host\n")
-			c.server.killClient(c)
-			break
-		}
-
-		if err != nil {
-			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-				c.Write("221", "Idle timeout, bye bye")
-			}
-			c.logInfo("Error reading from socket: %s\n", err)
-			break
-		}
-
-		text := string(buf[0:n])
-		msg += text
-
-		// If we have debug true, save the mail to file for review
-		if c.server.Debug {
-			c.saveMailDatatoFile(msg)
-		}
-
-		if len(msg) > c.server.maxMessageBytes {
-			c.logWarn("Maximum DATA size exceeded (%s)", strconv.Itoa(c.server.maxMessageBytes))
-			c.Write("552", "Maximum message size exceeded")
-			c.reset()
-			return
-		}
-
-		//Postfix bug ugly hack (\r\n.\r\nQUIT\r\n)
-		if strings.HasSuffix(msg, "\r\n.\r\n") || strings.LastIndex(msg, "\r\n.\r\n") != -1 {
-			break
-		}
-	}
-
-	if len(msg) > 0 {
-		c.logTrace("Got EOF, storing message and switching to MAIL state")
-		msg = strings.TrimSuffix(msg, "\r\n.\r\n")
-		c.data = msg
-
-		if c.server.storeMessages {
-			// Create Message Structure
-			mc := &config.IMAPMessage{}
-			mc.Helo = c.helo
-			mc.From = c.from
-			mc.To = c.recipients
-			mc.Data = c.data
-			mc.Host = c.remoteHost
-			mc.Domain = c.server.domain
-			mc.Notify = make(chan int)
-
-			// Send to savemail channel
-			c.server.Store.SaveMailChan <- mc
-
-			select {
-			// wait for the save to complete
-			case status := <-mc.Notify:
-				if status == 1 {
-					c.Write("250", "Ok: queued as "+mc.Hash)
-					c.logInfo("Message size %v bytes", len(msg))
-				} else {
-					c.Write("554", "Error: transaction failed, blame it on the weather")
-					c.logError("Message save failed")
-				}
-			case <-time.After(time.Second * 60):
-				c.Write("554", "Error: transaction failed, blame it on the weather")
-				c.logError("Message save timeout")
-			}
-		} else {
-			//Notify web socket with timestamp
-			c.server.Store.NotifyMailChan <- time.Now().Unix()
-
-			// we dont store messages here, just deliver to hell
-			c.Write("250", "Mail accepted for delivery")
-			c.logInfo("Message size %v bytes", len(msg))
-		}
-	}
-
-	c.reset()
-}
-
 func (c *Client) reject() {
 	c.Write("421", "Too busy. Try again later.")
 	c.server.closeClient(c)
@@ -661,7 +561,7 @@ func (c *Client) enterState(state State) {
 }
 
 func (c *Client) greet() {
-	c.Write("", "OK IMAP4rev1 Service Ready")
+	c.Write("*", "OK IMAP4rev1 Service Ready")
 	c.state = 1
 }
 
@@ -735,35 +635,18 @@ func (c *Client) readLine() (line string, err error) {
 	return line, nil
 }
 
-func (c *Client) parseCmd(line string) (cmd string, arg string, ok bool) {
+func (c *Client) parseCmd(line string) (hdr string, cmd string, arg string, ok bool) {
 	line = strings.TrimRight(line, "\r\n")
-	l := len(line)
-	switch {
-	case strings.Index(line, "STARTTLS") == 0:
-		return "STARTTLS", "", true
-	case strings.Index(line, "XCLIENT") == 0:
-		return strings.ToUpper(line[0:7]), strings.ToUpper(line[8:]), true
-	case l == 0:
-		return "", "", true
-	case l < 4:
-		c.logWarn("Command too short: %q", line)
-		return "", "", false
-	case l == 4:
-		return strings.ToUpper(line), "", true
-	case l == 5:
-		// Too long to be only command, too short to have args
-		c.logWarn("Mangled command: %q", line)
-		return "", "", false
+	sp := strings.Index(line, " ");
+	shdr := line[0:sp]
+	scmd := line[(sp + 1):]
+	sp2 := strings.Index(scmd, " ")
+	if(sp2 >= 0){
+		return shdr, scmd[0 : (sp2 - 1)], scmd[(sp2 + 1):], true
+	}else{
+		return shdr, scmd, "", true
 	}
-	// If we made it here, command is long enough to have args
-	if line[4] != ' ' {
-		// There wasn't a space after the command?
-		c.logWarn("Mangled command: %q", line)
-		return "", "", false
-	}
-	// I'm not sure if we should trim the args or not, but we will for now
-	//return strings.ToUpper(line[0:4]), strings.Trim(line[5:], " "), true
-	return strings.ToUpper(line[0:4]), strings.Trim(line[5:], " \n\r"), true
+	
 }
 
 // parseArgs takes the arguments proceeding a command and files them

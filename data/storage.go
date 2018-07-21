@@ -103,6 +103,13 @@ func (ds *DataStore) CheckGreyHost(h string) bool {
 	return to > 0
 }
 
+// Check if host address is in greylist
+// h -> hostname client ip
+func (ds *DataStore) Login(u string, p string) (*User, error) {
+	user, err := ds.Storage.(*MongoDB).Login(u, p)
+	return user, err
+}
+
 // Check if email address is in greylist
 // t -> type (from/to)
 // m -> local mailbox

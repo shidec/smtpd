@@ -247,7 +247,7 @@ func Register(w http.ResponseWriter, req *http.Request, ctx *Context) error {
 			Lastname:    req.FormValue("lastname"),
 			Email:       req.FormValue("email"),
 			Username:    r.Username,
-			IsActive:    false,
+			IsActive:    true,
 			JoinedAt:    time.Now(),
 			LastLoginIp: ctx.ClientIp,
 		}
