@@ -5,7 +5,7 @@ Test 500 clients:
 $ time go-smtp-source -c -l 1000 -t test@localhost -s 500 -m 5000 localhost:25000
 */
 
-package smtpd
+package imapd
 
 import (
 	"bufio"
@@ -30,24 +30,21 @@ import (
 type State int
 
 var commands = map[string]bool{
-	"HELO":     true,
-	"EHLO":     true,
-	"MAIL":     true,
-	"RCPT":     true,
-	"DATA":     true,
-	"RSET":     true,
-	"SEND":     true,
-	"SOML":     true,
-	"SAML":     true,
-	"VRFY":     true,
-	"EXPN":     true,
-	"HELP":     true,
+	"CAPABILITY":     true,
+	"LOGIN":     true,
+	"AUTHENTICATE PLAIN":     true,
+	"LIST":     true,
+	"LSUB":     true,
+	"LOGOUT":     true,
 	"NOOP":     true,
+	"CLOSE":     true,
+	"EXPUNGE":     true,
+	"SELECT":     true,
+	"EXAMINE":     true,
+	"STATUS":     true,
+	"UID":     true,
 	"QUIT":     true,
-	"TURN":     true,
-	"AUTH":     true,
-	"STARTTLS": true,
-	"XCLIENT":  true,
+	"APPEND":     true,
 }
 
 // Real server code starts here
@@ -62,19 +59,13 @@ type Server struct {
 	shutdown        bool
 	waitgroup       *sync.WaitGroup
 	timeout         time.Duration
-	allowedHosts    map[string]bool
-	trustedHosts    map[string]bool
 	maxClients      int
 	EnableXCLIENT   bool
 	TLSConfig       *tls.Config
 	ForceTLS        bool
 	Debug           bool
 	DebugPath       string
-	HostGreyList    bool
-	FromGreyList    bool
-	RcptGreyList    bool
 	sem             chan int // currently active clients
-	SpamRegex       string
 }
 
 type Client struct {
@@ -102,23 +93,7 @@ type Client struct {
 }
 
 // Init a new Client object
-func NewSmtpServer(cfg config.SmtpConfig, ds *data.DataStore) *Server {
-	var allowedHosts = make(map[string]bool, 15)
-	var trustedHosts = make(map[string]bool, 15)
-
-	// map the allow hosts for easy lookup
-	if arr := strings.Split(cfg.AllowedHosts, ","); len(arr) > 0 {
-		for i := 0; i < len(arr); i++ {
-			allowedHosts[strings.Trim(arr[i], " ")] = true
-		}
-	}
-
-	// map the allow hosts for easy lookup
-	if arr := strings.Split(cfg.TrustedHosts, ","); len(arr) > 0 {
-		for i := 0; i < len(arr); i++ {
-			trustedHosts[net.ParseIP(arr[i]).String()] = true
-		}
-	}
+func NewImapServer(cfg config.ImapConfig, ds *data.DataStore) *Server {
 
 	// sem is an active clients channel used for counting clients
 	maxClients := make(chan int, cfg.MaxClients)
@@ -126,27 +101,20 @@ func NewSmtpServer(cfg config.SmtpConfig, ds *data.DataStore) *Server {
 	return &Server{
 		Store:           ds,
 		domain:          cfg.Domain,
-		maxRecips:       cfg.MaxRecipients,
 		maxIdleSeconds:  cfg.MaxIdleSeconds,
 		maxMessageBytes: cfg.MaxMessageBytes,
 		storeMessages:   cfg.StoreMessages,
 		waitgroup:       new(sync.WaitGroup),
-		allowedHosts:    allowedHosts,
-		trustedHosts:    trustedHosts,
 		EnableXCLIENT:   cfg.Xclient,
-		HostGreyList:    cfg.HostGreyList,
-		FromGreyList:    cfg.FromGreyList,
-		RcptGreyList:    cfg.RcptGreyList,
 		Debug:           cfg.Debug,
 		DebugPath:       cfg.DebugPath,
 		sem:             maxClients,
-		SpamRegex:       cfg.SpamRegex,
 	}
 }
 
 // Main listener loop
 func (s *Server) Start() {
-	cfg := config.GetSmtpConfig()
+	cfg := config.GetImapConfig()
 
 	log.LogTrace("Loading the certificate: %s", cfg.PubKey)
 	cert, err := tls.LoadX509KeyPair(cfg.PubKey, cfg.PrvKey)
@@ -172,11 +140,11 @@ func (s *Server) Start() {
 		return
 	}
 
-	// Start listening for SMTP connections
-	log.LogInfo("SMTP listening on TCP4 %v", addr)
+	// Start listening for IMAP connections
+	log.LogInfo("IMAP listening on TCP4 %v", addr)
 	s.listener, err = net.ListenTCP("tcp4", addr)
 	if err != nil {
-		log.LogError("SMTP failed to start tcp4 listener: %v", err)
+		log.LogError("IMAP failed to start tcp4 listener: %v", err)
 		// TODO More graceful early-shutdown procedure
 		//panic(err)
 		s.Stop()
@@ -202,16 +170,16 @@ func (s *Server) Start() {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				log.LogError("SMTP accept error: %v; retrying in %v", err, tempDelay)
+				log.LogError("IMAP accept error: %v; retrying in %v", err, tempDelay)
 				time.Sleep(tempDelay)
 				continue
 			} else {
 				if s.shutdown {
-					log.LogTrace("SMTP listener shutting down on request")
+					log.LogTrace("IMAP listener shutting down on request")
 					return
 				}
 				// TODO Implement a max error counter before shutdown?
-				// or maybe attempt to restart smtpd
+				// or maybe attempt to restart imapd
 				panic(err)
 			}
 		} else {
@@ -235,17 +203,17 @@ func (s *Server) Start() {
 	}
 }
 
-// Stop requests the SMTP server closes it's listener
+// Stop requests the IMAP server closes it's listener
 func (s *Server) Stop() {
-	log.LogTrace("SMTP shutdown requested, connections will be drained")
+	log.LogTrace("IMAP shutdown requested, connections will be drained")
 	s.shutdown = true
 	s.listener.Close()
 }
 
-// Drain causes the caller to block until all active SMTP sessions have finished
+// Drain causes the caller to block until all active IMAP sessions have finished
 func (s *Server) Drain() {
 	s.waitgroup.Wait()
-	log.LogTrace("SMTP connections drained")
+	log.LogTrace("IMAP connections drained")
 }
 
 func (s *Server) closeClient(c *Client) {
@@ -260,7 +228,7 @@ func (s *Server) killClient(c *Client) {
 }
 
 func (s *Server) handleClient(c *Client) {
-	log.LogInfo("SMTP Connection from %v, starting session <%v>", c.conn.RemoteAddr(), c.id)
+	log.LogInfo("IMAP Connection from %v, starting session <%v>", c.conn.RemoteAddr(), c.id)
 
 	defer func() {
 		s.closeClient(c)
@@ -269,16 +237,10 @@ func (s *Server) handleClient(c *Client) {
 
 	c.greet()
 
-	// check if client on trusted hosts
-	if s.trustedHosts[net.ParseIP(c.remoteHost).String()] {
-		c.logInfo("Remote Client is Trusted: <%s>", c.remoteHost)
-		c.trusted = true
-	}
-
 	// This is our command reading loop
 	for i := 0; i < 100; i++ {
 		if c.state == 2 {
-			// Special case, does not use SMTP command format
+			// Special case, does not use IMAP command format
 			c.processData()
 			continue
 		}
@@ -317,7 +279,7 @@ func (s *Server) handleClient(c *Client) {
 func (c *Client) handle(cmd string, arg string, line string) {
 	c.logTrace("In state %d, got command '%s', args '%s'", c.state, cmd, arg)
 
-	// Check against valid SMTP commands
+	// Check against valid IMAP commands
 	if cmd == "" {
 		c.Write("500", "Speak up")
 		//return
@@ -339,12 +301,6 @@ func (c *Client) handle(cmd string, arg string, line string) {
 		//return
 	case "EHLO":
 		c.greetHandler(cmd, arg)
-		//return
-	case "MAIL":
-		c.mailHandler(cmd, arg)
-		//return
-	case "RCPT":
-		c.rcptHandler(cmd, arg)
 		//return
 	case "VRFY":
 		c.Write("252", "Cannot VRFY user, but will accept message")
@@ -411,121 +367,6 @@ func (c *Client) greetHandler(cmd string, arg string) {
 		c.helo = domain
 		c.state = 1
 	default:
-		c.ooSeq(cmd)
-	}
-}
-
-// READY state -> waiting for MAIL
-func (c *Client) mailHandler(cmd string, arg string) {
-	if cmd == "MAIL" {
-		if c.helo == "" {
-			c.Write("502", "Please introduce yourself first.")
-			return
-		}
-
-		// Match FROM, while accepting '>' as quoted pair and in double quoted strings
-		// (?i) makes the regex case insensitive, (?:) is non-grouping sub-match
-		re := regexp.MustCompile("(?i)^FROM:\\s*<((?:\\\\>|[^>])+|\"[^\"]+\"@[^>]+)>( [\\w= ]+)?$")
-		m := re.FindStringSubmatch(arg)
-		if m == nil {
-			c.Write("501", "Was expecting MAIL arg syntax of FROM:<address>")
-			c.logWarn("Bad MAIL argument: %q", arg)
-			return
-		}
-
-		from := m[1]
-		mailbox, domain, err := ParseEmailAddress(from)
-		if err != nil {
-			c.Write("501", "Bad sender address syntax")
-			c.logWarn("Bad address as MAIL arg: %q, %s", from, err)
-			return
-		}
-
-		if c.server.FromGreyList && c.server.Store.CheckGreyMail("from", mailbox, domain, c.remoteHost) {
-			c.Write("501", "Bad sender address syntax")
-			c.logWarn("Greylist address MAIL arg: %s, %v", from, err)
-			return
-		}
-
-		// This is where the client may put BODY=8BITMIME, but we already
-		// read the DATA as bytes, so it does not effect our processing.
-		if m[2] != "" {
-			args, ok := c.parseArgs(m[2])
-			if !ok {
-				c.Write("501", "Unable to parse MAIL ESMTP parameters")
-				c.logWarn("Bad MAIL argument: %q", arg)
-				return
-			}
-			if args["SIZE"] != "" {
-				size, err := strconv.ParseInt(args["SIZE"], 10, 32)
-				if err != nil {
-					c.Write("501", "Unable to parse SIZE as an integer")
-					c.logWarn("Unable to parse SIZE %q as an integer", args["SIZE"])
-					return
-				}
-				if int(size) > c.server.maxMessageBytes {
-					c.Write("552", "Max message size exceeded")
-					c.logWarn("Client wanted to send oversized message: %v", args["SIZE"])
-					return
-				}
-			}
-		}
-		c.from = from
-		c.logInfo("Mail from: %v", from)
-		c.Write("250", fmt.Sprintf("Roger, accepting mail from <%v>", from))
-		c.state = 1
-	} else {
-		c.ooSeq(cmd)
-	}
-}
-
-// MAIL state -> waiting for RCPTs followed by DATA
-func (c *Client) rcptHandler(cmd string, arg string) {
-	if cmd == "RCPT" {
-		if c.from == "" {
-			c.Write("502", "Missing MAIL FROM command.")
-			return
-		}
-
-		if (len(arg) < 4) || (strings.ToUpper(arg[0:3]) != "TO:") {
-			c.Write("501", "Was expecting RCPT arg syntax of TO:<address>")
-			c.logWarn("Bad RCPT argument: %q", arg)
-			return
-		}
-
-		// This trim is probably too forgiving
-		recip := strings.Trim(arg[3:], "<> ")
-		mailbox, host, err := ParseEmailAddress(recip)
-		if err != nil {
-			c.Write("501", "Bad recipient address syntax")
-			c.logWarn("Bad address as RCPT arg: %q, %s", recip, err)
-			return
-		}
-
-		// check if on allowed hosts if client ip not trusted
-		if !c.server.allowedHosts[host] && !c.trusted {
-			c.logWarn("Domain not allowed: <%s>", host)
-			c.Write("510", "Recipient address not allowed")
-			return
-		}
-
-		if c.server.RcptGreyList && c.server.Store.CheckGreyMail("to", mailbox, host, c.remoteHost) {
-			c.Write("510", "Recipient address not allowed")
-			c.logWarn("Greylist address as RCPT arg: %s, %v", recip, err)
-			return
-		}
-
-		if len(c.recipients) >= c.server.maxRecips {
-			c.logWarn("Maximum limit of %v recipients reached", c.server.maxRecips)
-			c.Write("552", fmt.Sprintf("Maximum limit of %v recipients reached", c.server.maxRecips))
-			return
-		}
-
-		c.recipients = append(c.recipients, recip)
-		c.logInfo("Recipient: %v", recip)
-		c.Write("250", fmt.Sprintf("I'll make sure <%v> gets this", recip))
-		return
-	} else {
 		c.ooSeq(cmd)
 	}
 }
@@ -691,10 +532,10 @@ func (c *Client) handleXCLIENT(cmd string, arg string, line string) {
 			//newUsername = value
 			continue
 		case "PROTO":
-			/*			if value == "SMTP" {
-							newProto = SMTP
-						} else if value == "ESMTP" {
-							newProto = ESMTP
+			/*			if value == "IMAP" {
+							newProto = IMAP
+						} else if value == "EIMAP" {
+							newProto = EIMAP
 						}*/
 			continue
 		default:
@@ -709,12 +550,6 @@ func (c *Client) handleXCLIENT(cmd string, arg string, line string) {
 
 	if newAddr != nil {
 		c.remoteHost = newAddr.String()
-		// check if client on trusted hosts
-		if c.server.trustedHosts[c.remoteHost] {
-			c.logTrace("Remote Client is Trusted: <%s>", c.remoteHost)
-			c.trusted = true
-		}
-
 		c.logTrace("XClient from ip via: <%s>", c.remoteHost)
 		c.Write("250", "Ok")
 	} else {
@@ -774,21 +609,9 @@ func (c *Client) processData() {
 		msg = strings.TrimSuffix(msg, "\r\n.\r\n")
 		c.data = msg
 
-		r, _ := regexp.Compile(c.server.SpamRegex)
-		if r.MatchString(msg) {
-			c.logWarn("Spam Received from <%s> email: ip:<%s>\n", c.from, c.remoteHost)
-			c.Write("250", "Ok")
-
-			go c.server.Store.SaveSpamIP(c.remoteHost, c.from)
-			c.reset()
-			c.server.closeClient(c)
-
-			return
-		}
-
 		if c.server.storeMessages {
 			// Create Message Structure
-			mc := &config.SMTPMessage{}
+			mc := &config.IMAPMessage{}
 			mc.Helo = c.helo
 			mc.From = c.from
 			mc.To = c.recipients
@@ -838,7 +661,7 @@ func (c *Client) enterState(state State) {
 }
 
 func (c *Client) greet() {
-	c.Write("220", fmt.Sprintf("%v Gleez SMTP # %s (%s) %s", c.server.domain, strconv.FormatInt(c.id, 10), strconv.Itoa(len(c.server.sem)), time.Now().Format(time.RFC1123Z)))
+	c.Write("", "OK IMAP4rev1 Service Ready")
 	c.state = 1
 }
 
@@ -959,7 +782,7 @@ func (c *Client) parseArgs(arg string) (args map[string]string, ok bool) {
 	for _, m := range pm {
 		args[strings.ToUpper(m[1])] = m[2]
 	}
-	c.logTrace("ESMTP params: %v", args)
+	c.logTrace("EIMAP params: %v", args)
 	return args, true
 }
 
@@ -977,23 +800,23 @@ func (c *Client) ooSeq(cmd string) {
 
 // Session specific logging methods
 func (c *Client) logTrace(msg string, args ...interface{}) {
-	log.LogTrace("SMTP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
+	log.LogTrace("IMAP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
 }
 
 func (c *Client) logInfo(msg string, args ...interface{}) {
-	log.LogInfo("SMTP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
+	log.LogInfo("IMAP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
 }
 
 func (c *Client) logWarn(msg string, args ...interface{}) {
 	// Update metrics
 	//expWarnsTotal.Add(1)
-	log.LogWarn("SMTP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
+	log.LogWarn("IMAP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
 }
 
 func (c *Client) logError(msg string, args ...interface{}) {
 	// Update metrics
 	//expErrorsTotal.Add(1)
-	log.LogError("SMTP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
+	log.LogError("IMAP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
 }
 
 func parseHelloArgument(arg string) (string, error) {

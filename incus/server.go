@@ -168,6 +168,7 @@ func (this *Server) LongPollListener(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/*
 func (this *Server) RedisListener() {
 	if !this.Config.GetBool("redis_enabled") {
 		return
@@ -192,7 +193,7 @@ func (this *Server) RedisListener() {
 		go cmd.FromRedis(this)
 	}
 }
-
+*/
 func (this *Server) AppListener(msg interface{}) {
 	if this.Debug {
 		log.Printf("LISENING FOR APP MESSAGE %v\n", msg)

@@ -14,11 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gleez/smtpd/config"
-	"github.com/gleez/smtpd/data"
-	"github.com/gleez/smtpd/log"
-	"github.com/gleez/smtpd/smtpd"
-	"github.com/gleez/smtpd/web"
+	"github.com/shidec/smtpd/config"
+	"github.com/shidec/smtpd/data"
+	"github.com/shidec/smtpd/log"
+	"github.com/shidec/smtpd/smtpd"
+	"github.com/shidec/smtpd/imapd"
+	"github.com/shidec/smtpd/web"
 )
 
 var (
@@ -115,16 +116,33 @@ func main() {
 	// Grab our datastore
 	ds := data.NewDataStore()
 
+	webConfig := config.GetWebConfig()
 	// Start HTTP server
-	web.Initialize(config.GetWebConfig(), ds)
-	go web.Start()
+	if webConfig.Available {
+		web.Initialize(webConfig, ds)
+		go web.Start()
+	}
 
+	log.LogInfo("smtpConfig")
+	smtpConfig := config.GetSmtpConfig()
 	// Startup SMTP server, block until it exits
-	smtpServer = smtpd.NewSmtpServer(config.GetSmtpConfig(), ds)
-	smtpServer.Start()
+	if smtpConfig.Available {
+		smtpServer = smtpd.NewSmtpServer(smtpConfig, ds)
+		go smtpServer.Start()
 
-	// Wait for active connections to finish
-	smtpServer.Drain()
+		//Wait for active connections to finish
+		//smtpServer.Drain()
+	}
+
+	log.LogInfo("imapConfig")
+	imapConfig := config.GetImapConfig()
+	// Startup IMAP server, block until it exits
+	if imapConfig.Available {
+		imapServer := imapd.NewImapServer(imapConfig, ds)
+		imapServer.Start()
+		// Wait for active connections to finish
+		imapServer.Drain()
+	}
 }
 
 // openLogFile creates or appends to the logfile passed on commandline

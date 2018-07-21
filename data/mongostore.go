@@ -3,8 +3,8 @@ package data
 import (
 	"fmt"
 
-	"github.com/gleez/smtpd/config"
-	"github.com/gleez/smtpd/log"
+	"github.com/shidec/smtpd/config"
+	"github.com/shidec/smtpd/log"
 
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"

@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"github.com/alexcesaro/mail/quotedprintable"
-	"github.com/gleez/smtpd/config"
-	"github.com/gleez/smtpd/log"
-	"github.com/sloonz/go-iconv"
+	"github.com/shidec/smtpd/config"
+	"github.com/shidec/smtpd/log"
+//	"github.com/sloonz/go-iconv"
 	"gopkg.in/mgo.v2/bson"
+	iconv "github.com/djimenez/iconv-go"
 )
 
 type Messages []Message
@@ -323,7 +324,8 @@ func MimeHeaderDecode(str string) string {
 	if err == nil && charset != "UTF-8" {
 		charset = fixCharset(charset)
 		// eg. charset can be "ISO-2022-JP"
-		convstr, err := iconv.Conv(str, "UTF-8", charset)
+		//convstr, err := iconv.Conv(str, "UTF-8", charset)
+		convstr, err := iconv.ConvertString(str, "UTF-8", charset)
 		if err == nil {
 			return convstr
 		}
@@ -354,7 +356,8 @@ func MimeBodyDecode(str string, charset string, encoding string) string {
 	if charset != "UTF-8" {
 		charset = fixCharset(charset)
 		// eg. charset can be "ISO-2022-JP"
-		if convstr, err := iconv.Conv(str, "UTF-8", charset); err == nil {
+		//if convstr, err := iconv.Conv(str, "UTF-8", charset); err == nil {
+		if convstr, err := iconv.ConvertString(str, "UTF-8", charset); err == nil {
 			return convstr
 		}
 	}

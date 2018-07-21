@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gleez/smtpd/config"
-	"github.com/gleez/smtpd/data"
-	"github.com/gleez/smtpd/incus"
-	"github.com/gleez/smtpd/log"
+	"github.com/shidec/smtpd/config"
+	"github.com/shidec/smtpd/data"
+	"github.com/shidec/smtpd/incus"
+	"github.com/shidec/smtpd/log"
 	"github.com/goods/httpbuf"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -66,7 +66,7 @@ func setupWebSocket(cfg config.WebConfig, ds *data.DataStore) {
 		}
 	}()
 
-	go Websocket.RedisListener()
+	//go Websocket.RedisListener()
 	go Websocket.SendHeartbeats()
 }
 

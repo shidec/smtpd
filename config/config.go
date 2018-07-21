@@ -25,6 +25,7 @@ type SMTPMessage struct {
 // SmtpConfig houses the SMTP server configuration - not using pointers
 // so that I can pass around copies of the object safely.
 type SmtpConfig struct {
+	Available   	bool
 	Ip4address      net.IP
 	Ip4port         int
 	Domain          string
@@ -46,7 +47,26 @@ type SmtpConfig struct {
 	SpamRegex       string
 }
 
+// SmtpConfig houses the SMTP server configuration - not using pointers
+// so that I can pass around copies of the object safely.
+type ImapConfig struct {
+	Available   	bool
+	Ip4address      net.IP
+	Ip4port         int
+	Domain          string
+	MaxIdleSeconds  int
+	MaxClients      int
+	MaxMessageBytes int
+	PubKey          string
+	PrvKey          string
+	StoreMessages   bool
+	Xclient         bool
+	Debug           bool
+	DebugPath       string
+}
+
 type Pop3Config struct {
+	Available   	bool
 	Ip4address     net.IP
 	Ip4port        int
 	Domain         string
@@ -54,6 +74,7 @@ type Pop3Config struct {
 }
 
 type WebConfig struct {
+	Available   	bool
 	Ip4address       net.IP
 	Ip4port          int
 	TemplateDir      string
@@ -84,6 +105,7 @@ var (
 
 	// Parsed specific configs
 	smtpConfig      *SmtpConfig
+	imapConfig      *ImapConfig
 	pop3Config      *Pop3Config
 	webConfig       *WebConfig
 	dataStoreConfig *DataStoreConfig
@@ -92,6 +114,11 @@ var (
 // GetSmtpConfig returns a copy of the SmtpConfig object
 func GetSmtpConfig() SmtpConfig {
 	return *smtpConfig
+}
+
+// GetImapConfig returns a copy of the ImapConfig object
+func GetImapConfig() ImapConfig {
+	return *imapConfig
 }
 
 // GetPop3Config returns a copy of the Pop3Config object
@@ -123,6 +150,7 @@ func LoadConfig(filename string) error {
 	// Validate sections
 	requireSection(messages, "logging")
 	requireSection(messages, "smtp")
+	requireSection(messages, "imap")
 	requireSection(messages, "pop3")
 	requireSection(messages, "web")
 	requireSection(messages, "datastore")
@@ -136,6 +164,8 @@ func LoadConfig(filename string) error {
 
 	// Validate options
 	requireOption(messages, "logging", "level")
+
+	requireOption(messages, "smtp", "available")
 	requireOption(messages, "smtp", "ip4.address")
 	requireOption(messages, "smtp", "ip4.port")
 	requireOption(messages, "smtp", "domain")
@@ -145,10 +175,24 @@ func LoadConfig(filename string) error {
 	requireOption(messages, "smtp", "max.message.bytes")
 	requireOption(messages, "smtp", "store.messages")
 	requireOption(messages, "smtp", "xclient")
+
+	requireOption(messages, "imap", "available")
+	requireOption(messages, "imap", "ip4.address")
+	requireOption(messages, "imap", "ip4.port")
+	requireOption(messages, "imap", "domain")
+	requireOption(messages, "imap", "max.clients")
+	requireOption(messages, "imap", "max.idle.seconds")
+	requireOption(messages, "imap", "max.message.bytes")
+	requireOption(messages, "imap", "store.messages")
+	requireOption(messages, "imap", "xclient")
+
+	requireOption(messages, "pop3", "available")
 	requireOption(messages, "pop3", "ip4.address")
 	requireOption(messages, "pop3", "ip4.port")
 	requireOption(messages, "pop3", "domain")
 	requireOption(messages, "pop3", "max.idle.seconds")
+
+	requireOption(messages, "web", "available")
 	requireOption(messages, "web", "ip4.address")
 	requireOption(messages, "web", "ip4.port")
 	requireOption(messages, "web", "template.dir")
@@ -167,6 +211,10 @@ func LoadConfig(filename string) error {
 	}
 
 	if err = parseSmtpConfig(); err != nil {
+		return err
+	}
+
+	if err = parseImapConfig(); err != nil {
 		return err
 	}
 
@@ -207,8 +255,14 @@ func parseSmtpConfig() error {
 	smtpConfig = new(SmtpConfig)
 	section := "smtp"
 
+	option := "available"
+	flag, err := Config.Bool(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	smtpConfig.Available = flag
 	// Parse IP4 address only, error on IP6.
-	option := "ip4.address"
+	option = "ip4.address"
 	str, err := Config.String(section, option)
 	if err != nil {
 		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
@@ -294,7 +348,7 @@ func parseSmtpConfig() error {
 	}
 
 	option = "store.messages"
-	flag, err := Config.Bool(section, option)
+	flag, err = Config.Bool(section, option)
 	if err != nil {
 		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
 	}
@@ -368,13 +422,132 @@ func parseSmtpConfig() error {
 	return nil
 }
 
+// parseImapConfig trying to catch config errors early
+func parseImapConfig() error {
+	imapConfig = new(ImapConfig)
+	section := "imap"
+
+	option := "available"
+	flag, err := Config.Bool(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	imapConfig.Available = flag
+
+	// Parse IP4 address only, error on IP6.
+	option = "ip4.address"
+	str, err := Config.String(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	addr := net.ParseIP(str)
+	if addr == nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	addr = addr.To4()
+	if addr == nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v' not IPv4!", section, option, err)
+	}
+	imapConfig.Ip4address = addr
+
+	option = "ip4.port"
+	imapConfig.Ip4port, err = Config.Int(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+
+	option = "domain"
+	str, err = Config.String(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	imapConfig.Domain = str
+
+	option = "public.key"
+	str, err = Config.String(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	imapConfig.PubKey = str
+
+	option = "private.key"
+	str, err = Config.String(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	imapConfig.PrvKey = str
+
+	option = "max.clients"
+	imapConfig.MaxClients, err = Config.Int(section, option)
+	if err != nil {
+		imapConfig.MaxClients = 50
+		//return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+
+	option = "max.idle.seconds"
+	imapConfig.MaxIdleSeconds, err = Config.Int(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+
+	option = "max.message.bytes"
+	imapConfig.MaxMessageBytes, err = Config.Int(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+
+	option = "store.messages"
+	flag, err = Config.Bool(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	imapConfig.StoreMessages = flag
+
+	option = "xclient"
+	flag, err = Config.Bool(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	imapConfig.Xclient = flag
+
+	option = "debug"
+	if Config.HasOption(section, option) {
+		flag, err = Config.Bool(section, option)
+		if err != nil {
+			return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+		}
+		imapConfig.Debug = flag
+	} else {
+		imapConfig.Debug = false
+	}
+
+	option = "debug.path"
+	if Config.HasOption(section, option) {
+		str, err := Config.String(section, option)
+		if err != nil {
+			return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+		}
+		imapConfig.DebugPath = str
+	} else {
+		imapConfig.DebugPath = "/tmp/imapd"
+	}
+
+	return nil
+}
+
 // parsePop3Config trying to catch config errors early
 func parsePop3Config() error {
 	pop3Config = new(Pop3Config)
 	section := "pop3"
 
+	option := "available"
+	flag, err := Config.Bool(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	pop3Config.Available = flag
 	// Parse IP4 address only, error on IP6.
-	option := "ip4.address"
+	option = "ip4.address"
 	str, err := Config.String(section, option)
 	if err != nil {
 		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
@@ -416,8 +589,14 @@ func parseWebConfig() error {
 	webConfig = new(WebConfig)
 	section := "web"
 
+	option := "available"
+	flag, err := Config.Bool(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	webConfig.Available = flag
 	// Parse IP4 address only, error on IP6.
-	option := "ip4.address"
+	option = "ip4.address"
 	str, err := Config.String(section, option)
 	if err != nil {
 		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
@@ -446,7 +625,7 @@ func parseWebConfig() error {
 	webConfig.TemplateDir = str
 
 	option = "template.cache"
-	flag, err := Config.Bool(section, option)
+	flag, err = Config.Bool(section, option)
 	if err != nil {
 		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
 	}
