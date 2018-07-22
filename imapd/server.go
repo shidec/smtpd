@@ -8,6 +8,7 @@ $ time go-smtp-source -c -l 1000 -t test@localhost -s 500 -m 5000 localhost:2500
 package imapd
 
 import (
+	"encoding/base64"
 	"bufio"
 	"bytes"
 	"crypto/tls"
@@ -32,7 +33,7 @@ type State int
 var commands = map[string]bool{
 	"CAPABILITY":     true,
 	"LOGIN":     true,
-	"AUTHENTICATE PLAIN":     true,
+	"AUTHENTICATE":     true,
 	"LIST":     true,
 	"LSUB":     true,
 	"LOGOUT":     true,
@@ -71,6 +72,8 @@ type Server struct {
 type Client struct {
 	server     *Server
 	state      State
+	user       *data.User
+	argId	   string		
 	helo       string
 	from       string
 	recipients []string
@@ -247,6 +250,13 @@ func (s *Server) handleClient(c *Client) {
 		}
 		*/
 
+		if c.state == 99 {
+			// Special case, does not use IMAP command format
+			line, _ := c.readLine()
+			c.processAuth(line)
+			continue
+		}
+
 		line, err := c.readLine()
 		if err == nil {
 			if hdr, cmd, arg, ok := c.parseCmd(line); ok {
@@ -279,6 +289,7 @@ func (s *Server) handleClient(c *Client) {
 
 // Commands are dispatched to the appropriate handler functions.
 func (c *Client) handle(hdr string, cmd string, arg string, line string) {
+	c.argId = hdr
 	c.logTrace("In state %d, got command '%s', args '%s'", c.state, cmd, arg)
 
 	// Check against valid IMAP commands
@@ -314,13 +325,12 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 	case "LOGOUT":
 		c.Write("", "* BYE IMAP4rev1 server logging out\r\n")
 		c.state = 1
+		c.user = nil
 		c.Write("", hdr + " OK LOGOUT completed\r\n")
 		c.server.killClient(c)
 		//return
-	case "AUTH":
-		c.authHandler(cmd, arg)
-		//c.logInfo("Got LOGIN authentication response: '%s', switching to AUTH state", arg)
-		//c.Write("334", "UGFzc3dvcmQ6")
+	case "AUTHENTICATE":
+		c.authHandler(hdr, cmd, arg)
 	case "STARTTLS":
 		c.tlsHandler()
 		//return
@@ -348,11 +358,12 @@ func (c *Client) loginHandler(hdr string, cmd string, arg string) {
 	}
 	
 	passwd := strings.Trim(arg[(sp1 + 1):], " ")
-	user, err := c.server.Store.Login(username, passwd)
-	if user == nil && err != nil {
+	var err error
+	c.user, err = c.server.Store.Login(username, passwd)
+	if c.user == nil && err != nil {
 		c.Write("", hdr + " NO Incorrect username/password")
 	}else{
-		c.state = 2
+		c.state = 1
 		c.Write("", hdr + " OK Authenticated")
 	}
 }
@@ -360,6 +371,30 @@ func (c *Client) loginHandler(hdr string, cmd string, arg string) {
 func (c *Client) capabilityHandler(hdr string, cmd string, arg string) {
 	c.Write("", "* CAPABILITY IMAP4rev1 AUTH=PLAIN")
 	c.Write("", hdr + " OK CAPABILITY completed")
+}
+
+func (c *Client) processAuth(line string) {
+	loginRE := regexp.MustCompile("(?:[A-z0-9]+)?\x00([A-z0-9]+)\x00([A-z0-9]+)")
+	c.state = 1
+
+	data, err := base64.StdEncoding.DecodeString(line)
+	if err != nil {
+		c.Write("", "* BAD Invalid auth details")
+		return
+	}
+	match := loginRE.FindSubmatch(data)
+	if len(match) != 3 {
+		c.Write("", c.argId + " NO Incorrect username/password")
+		return
+	}
+
+	c.user, err = c.server.Store.Login(string(match[1]), string(match[2]))
+	if err != nil {
+		c.Write("", c.argId + " NO Incorrect username/password")
+		return
+	}
+	//c.SetState(StateAuthenticated)
+	c.Write("", c.argId + " OK Authenticated")
 }
 
 func (c *Client) listHandler(hdr string, cmd string, arg string) {
@@ -390,48 +425,17 @@ func (c *Client) selectHandler(hdr string, cmd string, arg string) {
 	c.Write("", hdr + " OK [READ-WRITE] SELECT completed")
 }	
 
-func (c *Client) authHandler(cmd string, arg string) {
-	if cmd == "AUTH" {
-		if c.helo == "" {
-			c.Write("502", "Please introduce yourself first.")
-			return
-		}
-
-		if arg == "" {
-			c.Write("502", "Missing parameter")
-			return
-		}
-
-		c.logTrace("Got AUTH command, staying in MAIL state %s", arg)
-		parts := strings.Fields(arg)
-		mechanism := strings.ToUpper(parts[0])
-
-		/*	scanner := bufio.NewScanner(c.bufin)
-			line := scanner.Text()
-			c.logTrace("Read Line %s", line)
-			if !scanner.Scan() {
-				return
-			}
-		*/
-		switch mechanism {
-		case "LOGIN":
-			c.Write("334", "VXNlcm5hbWU6")
+func (c *Client) authHandler(hdr string, cmd string, arg string) {
+	
+		switch arg {
 		case "PLAIN":
-			c.logInfo("Got PLAIN authentication: %s", mechanism)
-			c.Write("235", "Authentication successful")
-		case "CRAM-MD5":
-			c.logInfo("Got CRAM-MD5 authentication, switching to AUTH state")
-			c.Write("334", "PDQxOTI5NDIzNDEuMTI4Mjg0NzJAc291cmNlZm91ci5hbmRyZXcuY211LmVkdT4=")
-		case "EXTERNAL":
-			c.logInfo("Got EXTERNAL authentication: %s", strings.TrimPrefix(arg, "EXTERNAL "))
-			c.Write("235", "Authentication successful")
+			c.logInfo("Got PLAIN authentication: %s")
+			c.state = 99
+			c.Write("", "+")
 		default:
 			c.logTrace("Unsupported authentication mechanism %v", arg)
-			c.Write("504", "Unsupported authentication mechanism")
+			c.Write("", hdr + " BAD Unsupported authentication mechanism")
 		}
-	} else {
-		c.ooSeq(cmd)
-	}
 }
 
 func (c *Client) tlsHandler() {
