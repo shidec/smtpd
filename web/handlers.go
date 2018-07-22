@@ -217,8 +217,10 @@ func RegisterForm(w http.ResponseWriter, req *http.Request, ctx *Context) (err e
 		http.Redirect(w, req, reverse("Mails"), http.StatusSeeOther)
 	}
 
+	smtpConfig := config.GetSmtpConfig()
 	return RenderTemplate("common/signup.html", w, map[string]interface{}{
 		"ctx": ctx,
+		"domain" : smtpConfig.Domain,
 	})
 }
 
@@ -241,11 +243,14 @@ func Register(w http.ResponseWriter, req *http.Request, ctx *Context) error {
 			return RegisterForm(w, req, ctx)
 		}
 
+		//config.LoadConfig(*configfile)
+		smtpConfig := config.GetSmtpConfig()
+		email := r.Username + "@" + smtpConfig.Domain
 		u := &data.User{
 			Id:          bson.NewObjectId(),
 			Firstname:   req.FormValue("firstname"),
 			Lastname:    req.FormValue("lastname"),
-			Email:       req.FormValue("email"),
+			Email:       email,
 			Username:    r.Username,
 			IsActive:    true,
 			JoinedAt:    time.Now(),

@@ -269,9 +269,7 @@ func (s *Server) handleClient(c *Client) {
 			break
 		}
 
-		log.LogInfo("Sx:kill_time:", c.kill_time)
 		if c.kill_time > 1 || c.errors > 3 {
-			log.LogInfo("Sx:killing")
 			return
 		}
 	}
@@ -302,16 +300,16 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 		c.capabilityHandler(hdr, cmd, arg)
 		//return
 	case "NOOP":
-		c.Write("250", "I have sucessfully done nothing")
+		c.Write("", hdr + " OK I have sucessfully done nothing")
 		//return
-	case "RSET":
+	case "LIST":
 		// Reset session
-		c.logTrace("Resetting session state on RSET request")
-		c.reset()
-		c.Write("250", "Session reset")
+		c.listHandler(hdr, cmd, arg)
 		//return
-	case "DATA":
-		c.dataHandler(cmd, arg)
+	case "LSUB":
+		c.lsubHandler(hdr, cmd, arg)
+	case "SELECT":
+		c.selectHandler(hdr, cmd, arg)	
 		//return
 	case "LOGOUT":
 		c.Write("", "* BYE IMAP4rev1 server logging out\r\n")
@@ -362,6 +360,34 @@ func (c *Client) loginHandler(hdr string, cmd string, arg string) {
 func (c *Client) capabilityHandler(hdr string, cmd string, arg string) {
 	c.Write("", "* CAPABILITY IMAP4rev1 AUTH=PLAIN")
 	c.Write("", hdr + " OK CAPABILITY completed")
+}
+
+func (c *Client) listHandler(hdr string, cmd string, arg string) {
+	if arg == "" {
+		// Blank selector means request directory separator
+		c.Write("", "* LIST (\\Noselect) \"/\" \"\"")
+	} else if arg == "*" {
+		c.Write("", "* LIST () \"/\" \"INBOX\"")
+	}
+
+	c.Write("", hdr + " OK LIST completed")
+}
+
+func (c *Client) lsubHandler(hdr string, cmd string, arg string) {
+	c.Write("", "* LIST () \"/\" \"INBOX\"")
+	c.Write("", hdr + " OK LIST completed")
+}
+
+func (c *Client) selectHandler(hdr string, cmd string, arg string) {
+	total, _ := c.server.Store.Total()
+	unread, _ := c.server.Store.Unread()
+	c.Write("", "* " + strconv.Itoa(total) + " EXISTS")
+	c.Write("", "* " + strconv.Itoa(unread) + " RECENT")
+	c.Write("", "* OK [UNSEEN " + strconv.Itoa(unread) + "]")
+	c.Write("", "* OK [UIDNEXT 999999]")
+	c.Write("", "* OK [UIDVALIDITY 250]")
+	c.Write("", "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	c.Write("", hdr + " OK [READ-WRITE] SELECT completed")
 }	
 
 func (c *Client) authHandler(cmd string, arg string) {

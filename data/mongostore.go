@@ -113,9 +113,18 @@ func (mongo *MongoDB) Total() (int, error) {
 	total, err := mongo.Messages.Find(bson.M{}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
-		return -1, err
+		total = 0
 	}
-	return total, nil
+	return total, err
+}
+
+func (mongo *MongoDB) Unread() (int, error) {
+	total, err := mongo.Messages.Find(bson.M{"unread": true}).Count()
+	if err != nil {
+		log.LogError("Error loading message: %s", err)
+		total = 0
+	}
+	return total, err
 }
 
 func (mongo *MongoDB) LoadAttachment(id string) (*Message, error) {
