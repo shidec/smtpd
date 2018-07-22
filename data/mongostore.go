@@ -81,6 +81,7 @@ func (mongo *MongoDB) List(start int, limit int) (*Messages, error) {
 		"subject":     1,
 		"starred":     1,
 		"unread":      1,
+		"recent":      1,
 	}).All(messages)
 	if err != nil {
 		log.LogError("Error loading messages: %s", err)

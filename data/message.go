@@ -15,9 +15,9 @@ import (
 	"github.com/alexcesaro/mail/quotedprintable"
 	"github.com/shidec/smtpd/config"
 	"github.com/shidec/smtpd/log"
-//	"github.com/sloonz/go-iconv"
-	"gopkg.in/mgo.v2/bson"
+	//"github.com/sloonz/go-iconv"
 	iconv "github.com/djimenez/iconv-go"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type Messages []Message
@@ -34,6 +34,7 @@ type Message struct {
 	MIME        *MIMEBody
 	Starred     bool
 	Unread      bool
+	Recent      bool
 }
 
 type Path struct {
@@ -93,6 +94,7 @@ func ParseSMTPMessage(m *config.SMTPMessage, hostname string, mimeParser bool) *
 		Ip:      m.Host,
 		Unread:  true,
 		Starred: false,
+		Recent: true,
 	}
 
 	if mimeParser {
