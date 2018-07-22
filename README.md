@@ -1,22 +1,5 @@
-smtpd
+smtpd + imapd
 =========================================================
-
-A Lightweight High Performance SMTP written in Go, made for receiving 
-large volumes of mail, parse and store in mongodb. The purpose of this daemon is 
-to grab the email, save it to the database and disconnect as quickly as possible.
-
-This server does not attempt to check for spam or do any sender 
-verification. These steps should be performed by other programs.
-The server does NOT send any email including bounces. This should
-be performed by a separate program.
-
-The most alluring aspect of Go are the Goroutines! It makes concurrent programming
-easy, clean and fun! Go programs can also take advantage of all your machine's multiple 
-cores without much effort that you would otherwise need with forking or managing your
-event loop callbacks, etc. Golang solves the C10K problem in a very interesting way
- http://en.wikipedia.org/wiki/C10k_problem
-
-Once compiled, Smtpd does not have an external dependencies (HTTP, SMTP are all built in).
 
 Features
 =========================================================
@@ -36,7 +19,7 @@ Features
 Development Status
 =========================================================
 
-SMTPD is currently production quality: it is being used for real work.
+SMTPD + IMAPD is currently development phase.
 
 
 TODO
@@ -57,13 +40,13 @@ Grab the Smtpd source code and compile the daemon:
 
     go get -v github.com/shidec/smtpd
 
-Edit etc/smtpd.conf and tailor to your environment.  It should work on most
-Unix and OS X machines as is.  Launch the daemon:
+Edit etc/mail.conf and tailor to your environment. Launch the daemon:
 
     $GOPATH/bin/smtpd -config=$GOPATH/src/github.com/shidec/smtpd/etc/mail.conf
 
-By default the SMTP server will be listening on localhost port 25000 and
-the web interface will be available at [localhost:10025](http://localhost:10025/).
+By default the SMTP server will be listening port 25,
+IMAP server will be listening port 143 and
+the web interface will be available at [domain:10025]
 
 This will place smtpd in the background and continue running
 
@@ -73,51 +56,17 @@ You may also put another process to watch your smtpd process and re-start it
 if something goes wrong.
 
 
-Using Nginx as a proxy
+Testing SMTP
 =========================================================
-Nginx can be used to proxy SMTP traffic for GoGuerrilla SMTPd
+* Open web interface (http://domain:10025)
+* Register an account
+* Send email to this account
 
-Why proxy SMTP?
-
- *	Terminate TLS connections: At present, only a partial implementation 
-of TLS is provided. OpenSSL on the other hand, used in Nginx, has a complete 
-implementation of SSL v2/v3 and TLS protocols.
- *	Could be used for load balancing and authentication in the future.
-
- 1.	Compile nginx with --with-mail --with-mail_ssl_module
- 2.	Configuration:
-
-```
-mail {
-	#This is the URL to Smtpd's http service which tells Nginx where to proxy the traffic to
-	auth_http 127.0.0.1:10025/auth-smtp;
-					
-	server {
-		listen  15.29.8.163:25;
-		protocol     smtp;
-		server_name  smtp.example.com;
-
-		smtp_auth none;
-		timeout 30000;
-		smtp_capabilities "PIPELINING" "8BITMIME" "SIZE 20480000";
-
-		# ssl default off. Leave off if starttls is on
-		#ssl                   on;
-		ssl_certificate        /etc/ssl/certs/ssl-cert-snakeoil.pem;
-		ssl_certificate_key    /etc/ssl/private/ssl-cert-snakeoil.key;
-		ssl_session_timeout    5m;
-
-		ssl_protocols               SSLv2 SSLv3 TLSv1;
-		ssl_ciphers                 HIGH:!aNULL:!MD5;
-		ssl_prefer_server_ciphers   on;
-
-		# TLS off unless client issues STARTTLS command
-		starttls      on;
-		proxy         on;
-		xclient       on;
-	}
-}
-```
+Testing IMAP
+=========================================================
+* Open mail client such as Thunderbird
+* Add new email account, don't use autodetect setting, then click "Done" button.
+![Mail client setup](mail_client_setup.png "Mail Client setup")
 
 Credits
 =========================================================
