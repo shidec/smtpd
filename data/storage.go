@@ -62,9 +62,11 @@ func (ds *DataStore) SaveMail() {
 
 	for {
 		mc := <-ds.SaveMailChan
-		msg := ParseSMTPMessage(mc, mc.Domain, ds.Config.MimeParser)
+		
 
 		if ds.Config.Storage == "mongodb" {
+			id := ds.Storage.(*MongoDB).AutoInc("Messages")
+			msg := ParseSMTPMessage(id, mc, mc.Domain, ds.Config.MimeParser)
 			mc.Hash, err = ds.Storage.(*MongoDB).Store(msg)
 
 			// if mongo conection is broken, try to reconnect only once
@@ -113,12 +115,24 @@ func (ds *DataStore) Login(u string, p string) (*User, error) {
 	return user, err
 }
 
-func (ds *DataStore) Total() (int, error) {
-	return ds.Storage.(*MongoDB).Total()
+func (ds *DataStore) Total(username string) (int, error) {
+	return ds.Storage.(*MongoDB).Total(username)
 }
 
 func (ds *DataStore) Unread() (int, error) {
 	return ds.Storage.(*MongoDB).Unread()
+}
+
+func (ds *DataStore) Recent() (int, error) {
+	return ds.Storage.(*MongoDB).Recent()
+}
+
+func (ds *DataStore) MessageSetByUID(username string, set SequenceSet) Messages {
+	return ds.Storage.(*MongoDB).MessageSetByUID(username, set)
+}
+
+func (ds *DataStore) MessageSetBySequenceNumber(username string, set SequenceSet) Messages {
+	return ds.Storage.(*MongoDB).MessageSetBySequenceNumber(username, set)
 }
 
 // Check if email address is in greylist

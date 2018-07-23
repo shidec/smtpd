@@ -119,7 +119,7 @@ func MailList(w http.ResponseWriter, r *http.Request, ctx *Context) (err error) 
 		return LoginForm(w, r, ctx)
 	}
 
-	t, err := ctx.Ds.Total()
+	t, err := ctx.Ds.Total(ctx.User.Username)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -265,6 +265,7 @@ func Register(w http.ResponseWriter, req *http.Request, ctx *Context) error {
 
 		if u.IsActive {
 			//store the user id in the values and redirect to index
+			ctx.Session.Values["username"] = u.Username
 			ctx.Session.Values["user"] = u.Id.Hex()
 			ctx.Session.AddFlash("Registration successful")
 			http.Redirect(w, req, reverse("Mails"), http.StatusSeeOther)

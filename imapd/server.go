@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	//"gopkg.in/mgo.v2/bson"
 
 	"github.com/shidec/smtpd/config"
 	"github.com/shidec/smtpd/data"
@@ -61,7 +62,6 @@ type Server struct {
 	waitgroup       *sync.WaitGroup
 	timeout         time.Duration
 	maxClients      int
-	EnableXCLIENT   bool
 	TLSConfig       *tls.Config
 	ForceTLS        bool
 	Debug           bool
@@ -108,7 +108,6 @@ func NewImapServer(cfg config.ImapConfig, ds *data.DataStore) *Server {
 		maxMessageBytes: cfg.MaxMessageBytes,
 		storeMessages:   cfg.StoreMessages,
 		waitgroup:       new(sync.WaitGroup),
-		EnableXCLIENT:   cfg.Xclient,
 		Debug:           cfg.Debug,
 		DebugPath:       cfg.DebugPath,
 		sem:             maxClients,
@@ -331,11 +330,11 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 		//return
 	case "AUTHENTICATE":
 		c.authHandler(hdr, cmd, arg)
+	case "UID":
+		c.uidHandler(hdr, cmd, arg)	
 	case "STARTTLS":
 		c.tlsHandler()
 		//return
-	case "XCLIENT":
-		c.handleXCLIENT(cmd, arg, line)
 	default:
 		c.errors++
 		if c.errors > 3 {
@@ -414,12 +413,16 @@ func (c *Client) lsubHandler(hdr string, cmd string, arg string) {
 }
 
 func (c *Client) selectHandler(hdr string, cmd string, arg string) {
-	total, _ := c.server.Store.Total()
-	unread, _ := c.server.Store.Unread()
-	c.Write("", "* " + strconv.Itoa(total) + " EXISTS")
-	c.Write("", "* " + strconv.Itoa(unread) + " RECENT")
-	c.Write("", "* OK [UNSEEN " + strconv.Itoa(unread) + "]")
-	c.Write("", "* OK [UIDNEXT 999999]")
+	//total, _ := c.server.Store.Total(c.user.Username)
+	//unread, _ := c.server.Store.Unread()
+	//recent, _ := c.server.Store.Recent()
+	//c.Write("", "* " + strconv.Itoa(total) + " EXISTS")
+	//c.Write("", "* " + strconv.Itoa(recent) + " RECENT")
+	//c.Write("", "* OK [UNSEEN " + strconv.Itoa(unread) + "]")
+	c.Write("", "* 100 EXISTS")
+	c.Write("", "* 2 RECENT")
+	c.Write("", "* OK [UNSEEN 2]")
+	c.Write("", "* OK [UIDNEXT 121]")
 	c.Write("", "* OK [UIDVALIDITY 250]")
 	c.Write("", "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
 	c.Write("", hdr + " OK [READ-WRITE] SELECT completed")
@@ -436,6 +439,75 @@ func (c *Client) authHandler(hdr string, cmd string, arg string) {
 			c.logTrace("Unsupported authentication mechanism %v", arg)
 			c.Write("", hdr + " BAD Unsupported authentication mechanism")
 		}
+}
+
+func (c *Client) uidHandler(hdr string, cmd string, arg string) {
+	/*
+	if !c.assertSelected(args.ID(), readOnly) {
+		return
+	}
+	*/
+	// Fetch the messages
+	re := regexp.MustCompile("(?i:FETCH) ([\\d\\:\\*\\,]+) \\(([A-z0-9\\s\\(\\)\\[\\]\\.-]+)\\)")
+	match := re.FindSubmatch([]byte(arg))
+	
+	c.logInfo("uidHandler:" + string(match[1]))
+
+	seqSet, err := data.InterpretSequenceSet(string(match[1]))
+	if err != nil {
+		c.Write("", hdr + " NO "+err.Error())
+		return
+	}
+	
+	searchByUID := strings.ToUpper(arg) == "UID "
+
+	var msgs []data.Message
+	if searchByUID {
+		msgs = c.server.Store.MessageSetByUID(c.user.Username, seqSet)
+	} else {
+		msgs = c.server.Store.MessageSetBySequenceNumber(c.user.Username, seqSet)
+	}
+	c.logInfo("" + strconv.Itoa(len(msgs)))
+	/*
+	
+	fetchParamString := args.Arg(fetchArgParams)
+	if searchByUID && !strings.Contains(fetchParamString, "UID") {
+		fetchParamString += " UID"
+	}
+
+	for _, msg := range msgs {
+		fetchParams, err := fetch(fetchParamString, c, msg)
+		if err != nil {
+			if err == ErrUnrecognisedParameter {
+				c.writeResponse(args.ID(), "BAD Unrecognised Parameter")
+				return
+			}
+
+			c.writeResponse(args.ID(), "BAD")
+			return
+		}
+
+		if c.mailboxWritable == readWrite {
+			msg = msg.RemoveFlags(types.FlagRecent)
+			msg, err = msg.Save()
+			if err != nil {
+				// TODO: this error is not fatal, but should still be logged
+			}
+		}
+
+		fullReply := fmt.Sprintf("%d FETCH (%s)",
+			msg.SequenceNumber(),
+			fetchParams)
+
+		c.writeResponse("", fullReply)
+	}
+
+	if searchByUID {
+		c.writeResponse(args.ID(), "OK UID FETCH Completed")
+	} else {
+		c.writeResponse(args.ID(), "OK FETCH Completed")
+	}
+	*/
 }
 
 func (c *Client) tlsHandler() {
@@ -477,112 +549,6 @@ func (c *Client) tlsHandler() {
 	}
 
 	c.state = 1
-}
-
-// DATA
-func (c *Client) dataHandler(cmd string, arg string) {
-	c.logTrace("Enter dataHandler %d", c.state)
-
-	if arg != "" {
-		c.Write("501", "DATA command should not have any arguments")
-		c.logWarn("Got unexpected args on DATA: %q", arg)
-		return
-	}
-
-	if len(c.recipients) > 0 {
-		// We have recipients, go to accept data
-		c.logTrace("Go ahead we have recipients %d", len(c.recipients))
-		c.Write("354", "Go ahead. End your data with <CR><LF>.<CR><LF>")
-		c.state = 2
-		return
-	} else {
-		c.Write("502", "Missing RCPT TO command.")
-		return
-	}
-
-	return
-}
-
-func (c *Client) handleXCLIENT(cmd string, arg string, line string) {
-
-	if !c.server.EnableXCLIENT {
-		c.Write("550", "XCLIENT not enabled")
-		return
-	}
-
-	var (
-		newHeloName        = ""
-		newAddr     net.IP = nil
-	)
-
-	// Important set the trusted to false
-	c.trusted = false
-
-	c.logTrace("Handle XCLIENT args: %q", arg)
-	line1 := strings.Fields(arg)
-
-	for _, item := range line1[0:] {
-
-		parts := strings.Split(item, "=")
-		c.logTrace("Handle XCLIENT parts: %q", parts)
-
-		if len(parts) != 2 {
-			c.Write("502", "Couldn't decode the command.")
-			return
-		}
-
-		name := parts[0]
-		value := parts[1]
-
-		switch name {
-		case "NAME":
-			// Unused in smtpd package
-			continue
-		case "HELO":
-			newHeloName = value
-			continue
-		case "ADDR":
-			newAddr = net.ParseIP(value)
-			continue
-		case "PORT":
-			_, err := strconv.ParseUint(value, 10, 16)
-			if err != nil {
-				c.Write("502", "Couldn't decode the command.")
-				return
-			}
-			continue
-		case "LOGIN":
-			//newUsername = value
-			continue
-		case "PROTO":
-			/*			if value == "IMAP" {
-							newProto = IMAP
-						} else if value == "EIMAP" {
-							newProto = EIMAP
-						}*/
-			continue
-		default:
-			c.Write("502", "Couldn't decode the command.")
-			return
-		}
-	}
-
-	if newHeloName != "" {
-		c.helo = newHeloName
-	}
-
-	if newAddr != nil {
-		c.remoteHost = newAddr.String()
-		c.logTrace("XClient from ip via: <%s>", c.remoteHost)
-		c.Write("250", "Ok")
-	} else {
-		c.logTrace("XClient unable to proceed")
-
-		c.Write("421", "Bye bye")
-		c.server.killClient(c)
-	}
-
-	return
 }
 
 func (c *Client) reject() {

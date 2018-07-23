@@ -2,6 +2,8 @@ package data
 
 import (
 	"fmt"
+	"strconv"
+	"encoding/base64"
 
 	"github.com/shidec/smtpd/config"
 	"github.com/shidec/smtpd/log"
@@ -18,6 +20,12 @@ type MongoDB struct {
 	Hosts    *mgo.Collection
 	Emails   *mgo.Collection
 	Spamdb   *mgo.Collection
+	Sequences   *mgo.Collection
+}
+
+type Sequences struct {
+	table string
+	value int
 }
 
 var (
@@ -53,11 +61,26 @@ func CreateMongoDB(c config.DataStoreConfig) *MongoDB {
 		Hosts:    session.DB(c.MongoDb).C("GreyHosts"),
 		Emails:   session.DB(c.MongoDb).C("GreyMails"),
 		Spamdb:   session.DB(c.MongoDb).C("SpamDB"),
+		Sequences:   session.DB(c.MongoDb).C("Sequences"),
 	}
 }
 
 func (mongo *MongoDB) Close() {
 	mongo.Session.Close()
+}
+
+
+func (mongo *MongoDB) AutoInc(table string) int {
+	count, _ := mongo.Sequences.Find(bson.M{"table": table}).Count()
+	if count == 0 {
+		mongo.Sequences.Insert(bson.M{"table": table, "value": 1})
+		return 1
+	}else{
+		var seq *Sequences
+		mongo.Sequences.Find(bson.M{"table": table}).One(&seq)
+		mongo.Sequences.Update(bson.M{"table": table}, bson.M{"table": table, "value": seq.value + 1})	
+		return seq.value
+	}
 }
 
 func (mongo *MongoDB) Store(m *Message) (string, error) {
@@ -66,7 +89,9 @@ func (mongo *MongoDB) Store(m *Message) (string, error) {
 		log.LogError("Error inserting message: %s", err)
 		return "", err
 	}
-	return m.Id, nil
+
+	uEnc := base64.URLEncoding.EncodeToString([]byte(strconv.Itoa(m.Id)))
+	return uEnc, nil
 }
 
 func (mongo *MongoDB) List(start int, limit int) (*Messages, error) {
@@ -110,7 +135,7 @@ func (mongo *MongoDB) Load(id string) (*Message, error) {
 	return result, nil
 }
 
-func (mongo *MongoDB) Total() (int, error) {
+func (mongo *MongoDB) Total(username string) (int, error) {
 	total, err := mongo.Messages.Find(bson.M{}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
@@ -121,6 +146,15 @@ func (mongo *MongoDB) Total() (int, error) {
 
 func (mongo *MongoDB) Unread() (int, error) {
 	total, err := mongo.Messages.Find(bson.M{"unread": true}).Count()
+	if err != nil {
+		log.LogError("Error loading message: %s", err)
+		total = 0
+	}
+	return total, err
+}
+
+func (mongo *MongoDB) Recent() (int, error) {
+	total, err := mongo.Messages.Find(bson.M{"recent": true}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
@@ -201,4 +235,106 @@ func (mongo *MongoDB) StoreSpamIp(s SpamIP) (string, error) {
 		return "", err
 	}
 	return s.Id.Hex(), nil
+}
+/*
+func (mongo *MongoDB) MessageSetByUID(username string, set SequenceSet) Messages {
+	msgs := []Message {}
+	msg := Message{}
+
+	for _, msgRange := range set {
+		mongo.Messages.Find(bson.M{}).One(&msg)
+		msgs = append(msgs, msg)
+	}
+	return msgs
+}
+*/
+
+func (mongo *MongoDB) MessageSetByUID(username string, set SequenceSet) Messages {
+	var msgs Messages
+
+	// If the mailbox is empty, return empty array
+	count, _ := mongo.Messages.Find(bson.M{"to.mailbox":username}).Count()
+	if count == 0 {
+		return msgs
+	}
+
+	for _, msgRange := range set {
+		msgs = append(msgs, mongo.messageRangeBy(username, msgRange)...)
+	}
+	return msgs
+}
+
+func (mongo *MongoDB) MessageSetBySequenceNumber(username string, set SequenceSet) Messages {
+	var msgs Messages
+	count , _ := mongo.Messages.Find(bson.M{"to.mailbox":username}).Count()
+	if count == 0 {
+		return msgs
+	}
+	// For each sequence range in the sequence set
+	for _, msgRange := range set {
+		msgs = append(msgs, mongo.messageRangeBy(username, msgRange)...)
+	}
+	return msgs
+}
+
+func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Messages {
+	msgs := Messages {} //make([]Message, 0)
+	// If Min is "*", meaning the last UID in the mailbox, Max should
+	// always be Nil
+	if seqRange.Min.Last() {
+		msg := Message{}
+		mongo.Messages.Find(bson.M{"to.mailbox" : username}).Sort("-id").Limit(1).One(&msg)
+		msgs = append(msgs, msg)		
+		return msgs
+	}
+
+	min, err := seqRange.Min.Value()
+	if err != nil {
+		fmt.Printf("Error: %s\n", err.Error())	
+		return msgs
+	}
+
+	// If no Max is specified, the sequence number must be fixed
+	if seqRange.Max.Nil() {
+		var uid uint32
+		// Fetch specific message by sequence number
+		uid, _ = seqRange.Min.Value()
+		msg, err := mongo.MessageByUID(username, uid)
+		if err != nil {
+			fmt.Printf("Error: %s\n", err.Error())
+			return msgs
+		}
+		
+		msgs = append(msgs, msg)
+		return msgs
+	}
+
+	max, err := seqRange.Max.Value()
+	if seqRange.Max.Last() {
+		ms := Messages {}
+		mongo.Messages.Find(bson.M{"to.mailbox" : username, "id" : bson.M{"$gte": min}}).Sort("-id").All(&ms)
+		for _, msg := range ms {
+			msgs = append(msgs, msg)	
+		}
+		
+		return msgs
+	} else {
+		ms := Messages {}
+		mongo.Messages.Find(bson.M{"to.mailbox" : username, "id" : bson.M{"$gte" : min, "$lte" : max}}).Sort("-nomor").All(&ms)
+
+		for _, msg := range ms {
+			msgs = append(msgs, msg)	
+		}
+	}
+	return msgs
+}
+
+func (mongo *MongoDB) MessageByUID(username string, uid uint32) (Message, error) {
+	msg := Message{}
+	err := mongo.Messages.Find(bson.M{"to.mailbox" : username, "id" : uid}).One(&msg);
+	if err == nil {
+		return msg, nil
+	}
+
+	return msg, err
 }

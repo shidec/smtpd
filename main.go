@@ -123,7 +123,6 @@ func main() {
 		go web.Start()
 	}
 
-	log.LogInfo("smtpConfig")
 	smtpConfig := config.GetSmtpConfig()
 	// Startup SMTP server, block until it exits
 	if smtpConfig.Available {
@@ -134,7 +133,6 @@ func main() {
 		//smtpServer.Drain()
 	}
 
-	log.LogInfo("imapConfig")
 	imapConfig := config.GetImapConfig()
 	// Startup IMAP server, block until it exits
 	if imapConfig.Available {
