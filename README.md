@@ -61,6 +61,7 @@ Testing SMTP
 * Open web interface (http://domain:10025)
 * Register an account
 * Send email to this account
+* Open web interface (http://domain:10025) to read email
 
 Testing IMAP
 =========================================================
