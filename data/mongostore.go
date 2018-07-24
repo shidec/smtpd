@@ -23,11 +23,6 @@ type MongoDB struct {
 	Sequences   *mgo.Collection
 }
 
-type Sequences struct {
-	table string
-	value int
-}
-
 var (
 	mgoSession *mgo.Session
 )
@@ -69,8 +64,7 @@ func (mongo *MongoDB) Close() {
 	mongo.Session.Close()
 }
 
-
-func (mongo *MongoDB) AutoInc(table string) int {
+func (mongo *MongoDB) NextId(table string) int {
 	count, _ := mongo.Sequences.Find(bson.M{"table": table}).Count()
 	if count == 0 {
 		mongo.Sequences.Insert(bson.M{"table": table, "value": 1})
@@ -78,9 +72,25 @@ func (mongo *MongoDB) AutoInc(table string) int {
 	}else{
 		var seq *Sequences
 		mongo.Sequences.Find(bson.M{"table": table}).One(&seq)
-		mongo.Sequences.Update(bson.M{"table": table}, bson.M{"table": table, "value": seq.value + 1})	
-		return seq.value
+		return seq.Value
 	}
+}
+
+func (mongo *MongoDB) AutoInc(table string) int {
+	count, _ := mongo.Sequences.Find(bson.M{"table": table}).Count()
+	if count == 0 {
+		mongo.Sequences.Insert(bson.M{"table": table, "value": 2})
+		return 1
+	}else{
+		var seq Sequences
+		mongo.Sequences.Find(bson.M{"table": table}).One(&seq)
+		mongo.Sequences.Update(bson.M{"table": table}, bson.M{"$set" : bson.M{"value": seq.Value + 1}})	
+		return seq.Value
+	}
+}
+
+func (mongo *MongoDB) RemoveRecent(m Message) {
+	mongo.Messages.Update(bson.M{"id": m.Id}, bson.M{"$set": bson.M{"recent": false}})
 }
 
 func (mongo *MongoDB) Store(m *Message) (string, error) {
@@ -136,7 +146,7 @@ func (mongo *MongoDB) Load(id string) (*Message, error) {
 }
 
 func (mongo *MongoDB) Total(username string) (int, error) {
-	total, err := mongo.Messages.Find(bson.M{}).Count()
+	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
@@ -144,8 +154,8 @@ func (mongo *MongoDB) Total(username string) (int, error) {
 	return total, err
 }
 
-func (mongo *MongoDB) Unread() (int, error) {
-	total, err := mongo.Messages.Find(bson.M{"unread": true}).Count()
+func (mongo *MongoDB) Unread(username string) (int, error) {
+	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username,"unread": true}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
@@ -153,8 +163,8 @@ func (mongo *MongoDB) Unread() (int, error) {
 	return total, err
 }
 
-func (mongo *MongoDB) Recent() (int, error) {
-	total, err := mongo.Messages.Find(bson.M{"recent": true}).Count()
+func (mongo *MongoDB) Recent(username string) (int, error) {
+	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username,"recent": true}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0

@@ -332,6 +332,8 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 		c.authHandler(hdr, cmd, arg)
 	case "UID":
 		c.uidHandler(hdr, cmd, arg)	
+	case "STATUS":
+		c.statusHandler(hdr, cmd, arg)		
 	case "STARTTLS":
 		c.tlsHandler()
 		//return
@@ -413,16 +415,14 @@ func (c *Client) lsubHandler(hdr string, cmd string, arg string) {
 }
 
 func (c *Client) selectHandler(hdr string, cmd string, arg string) {
-	//total, _ := c.server.Store.Total(c.user.Username)
-	//unread, _ := c.server.Store.Unread()
-	//recent, _ := c.server.Store.Recent()
-	//c.Write("", "* " + strconv.Itoa(total) + " EXISTS")
-	//c.Write("", "* " + strconv.Itoa(recent) + " RECENT")
-	//c.Write("", "* OK [UNSEEN " + strconv.Itoa(unread) + "]")
-	c.Write("", "* 100 EXISTS")
-	c.Write("", "* 2 RECENT")
-	c.Write("", "* OK [UNSEEN 2]")
-	c.Write("", "* OK [UIDNEXT 121]")
+	total, _ := c.server.Store.Total(c.user.Username)
+	unread, _ := c.server.Store.Unread(c.user.Username)
+	recent, _ := c.server.Store.Recent(c.user.Username)
+	nextId := c.server.Store.NextId("Messages")
+	c.Write("", "* " + strconv.Itoa(total) + " EXISTS")
+	c.Write("", "* " + strconv.Itoa(recent) + " RECENT")
+	c.Write("", "* OK [UNSEEN " + strconv.Itoa(unread) + "]")
+	c.Write("", "* OK [UIDNEXT " + strconv.Itoa(nextId) + "]")
 	c.Write("", "* OK [UIDVALIDITY 250]")
 	c.Write("", "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
 	c.Write("", hdr + " OK [READ-WRITE] SELECT completed")
@@ -468,25 +468,26 @@ func (c *Client) uidHandler(hdr string, cmd string, arg string) {
 		msgs = c.server.Store.MessageSetBySequenceNumber(c.user.Username, seqSet)
 	}
 	c.logInfo("" + strconv.Itoa(len(msgs)))
-	/*
 	
-	fetchParamString := args.Arg(fetchArgParams)
+	
+	fetchParamString := string(match[2])
 	if searchByUID && !strings.Contains(fetchParamString, "UID") {
 		fetchParamString += " UID"
 	}
 
 	for _, msg := range msgs {
-		fetchParams, err := fetch(fetchParamString, c, msg)
+		fetchParams, err := fetch(fetchParamString, msg)
 		if err != nil {
 			if err == ErrUnrecognisedParameter {
-				c.writeResponse(args.ID(), "BAD Unrecognised Parameter")
+				c.Write("", c.argId + " BAD Unrecognised Parameter")
 				return
 			}
 
-			c.writeResponse(args.ID(), "BAD")
+			c.Write("", c.argId + " BAD")
 			return
 		}
 
+		/*
 		if c.mailboxWritable == readWrite {
 			msg = msg.RemoveFlags(types.FlagRecent)
 			msg, err = msg.Save()
@@ -494,20 +495,37 @@ func (c *Client) uidHandler(hdr string, cmd string, arg string) {
 				// TODO: this error is not fatal, but should still be logged
 			}
 		}
+		*/
+
+		c.server.Store.RemoveRecent(msg)
 
 		fullReply := fmt.Sprintf("%d FETCH (%s)",
-			msg.SequenceNumber(),
+			msg.Id,
 			fetchParams)
 
-		c.writeResponse("", fullReply)
+		c.Write("", fullReply)
 	}
 
 	if searchByUID {
-		c.writeResponse(args.ID(), "OK UID FETCH Completed")
+		c.Write("", c.argId + " OK UID FETCH Completed")
 	} else {
-		c.writeResponse(args.ID(), "OK FETCH Completed")
+		c.Write("", c.argId + " OK FETCH Completed")
+	}
+}
+
+func (c *Client) statusHandler(hdr string, cmd string, arg string) {
+	/*
+	mailbox, err := c.User.MailboxByName(args.Arg(0))
+	if err != nil {
+		c.writeResponse(args.ID(), "NO "+err.Error())
+		return
 	}
 	*/
+
+	unread, _ := c.server.Store.Unread(c.user.Username)
+	c.Write("", fmt.Sprintf("STATUS %s (UIDNEXT %d UNSEEN %d)",
+		"INBOX", c.server.Store.NextId("Messages"), unread))
+	c.Write("", c.argId + " OK STATUS Completed")
 }
 
 func (c *Client) tlsHandler() {

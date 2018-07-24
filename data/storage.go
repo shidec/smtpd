@@ -55,6 +55,10 @@ func (ds *DataStore) StorageDisconnect() {
 	}
 }
 
+func (ds *DataStore) RemoveRecent(m Message) {
+	ds.Storage.(*MongoDB).RemoveRecent(m)
+}
+
 func (ds *DataStore) SaveMail() {
 	log.LogTrace("Running SaveMail Rotuines")
 	var err error
@@ -115,16 +119,20 @@ func (ds *DataStore) Login(u string, p string) (*User, error) {
 	return user, err
 }
 
+func (ds *DataStore) NextId(table string) int {
+	return ds.Storage.(*MongoDB).NextId(table)
+}
+
 func (ds *DataStore) Total(username string) (int, error) {
 	return ds.Storage.(*MongoDB).Total(username)
 }
 
-func (ds *DataStore) Unread() (int, error) {
-	return ds.Storage.(*MongoDB).Unread()
+func (ds *DataStore) Unread(username string) (int, error) {
+	return ds.Storage.(*MongoDB).Unread(username)
 }
 
-func (ds *DataStore) Recent() (int, error) {
-	return ds.Storage.(*MongoDB).Recent()
+func (ds *DataStore) Recent(username string) (int, error) {
+	return ds.Storage.(*MongoDB).Recent(username)
 }
 
 func (ds *DataStore) MessageSetByUID(username string, set SequenceSet) Messages {

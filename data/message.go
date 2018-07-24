@@ -38,6 +38,11 @@ type Message struct {
 	Recent      bool
 }
 
+type Sequences struct {
+	Table string
+	Value int
+}
+
 type Path struct {
 	Relays  []string
 	Mailbox string
