@@ -87,12 +87,20 @@ func fetchUID(param string, m data.Message, peekOnly bool) string {
 }
 
 func fetchFlags(param string, m data.Message, peekOnly bool) string {
-	/*
-	flags := append(m.Flags().Strings(), m.Keywords()...)
+	
+	var flags []string
+	if m.Unread {
+		flags = append(flags, "UNSEEN")
+	}
+
+	if m.Recent {
+		flags = append(flags, "RECENT")
+	}
+
 	flagList := strings.Join(flags, " ")
-	return fmt.Sprintf("FLAGS (%s)", flagList)
-	*/
-	return fmt.Sprintf("FLAGS (UNSEEN RECENT)")
+	return fmt.Sprintf("FLAGS (%s UID %d)", flagList, m.Sequence)
+	
+	//return fmt.Sprintf("FLAGS (UNSEEN RECENT)")
 }
 
 func fetchRfcSize(param string, m data.Message, peekOnly bool) string {

@@ -119,7 +119,7 @@ func MailList(w http.ResponseWriter, r *http.Request, ctx *Context) (err error) 
 		return LoginForm(w, r, ctx)
 	}
 
-	t, err := ctx.Ds.Total(ctx.User.Username)
+	t, err := ctx.Ds.TotalErr(ctx.User.Username)
 	if err != nil {
 		http.NotFound(w, r)
 		return

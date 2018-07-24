@@ -1,7 +1,6 @@
 package data
 
 import (
-	"strconv"
 	"bytes"
 	"encoding/base64"
 	"fmt"
@@ -24,7 +23,8 @@ import (
 type Messages []Message
 
 type Message struct {
-	Id          int
+	Id          string
+	Sequence 	int
 	Subject     string
 	From        *Path
 	To          []*Path
@@ -36,6 +36,7 @@ type Message struct {
 	Starred     bool
 	Unread      bool
 	Recent      bool
+	Deleted		bool
 }
 
 type Sequences struct {
@@ -86,21 +87,24 @@ type Attachment struct {
 }
 
 // TODO support nested MIME content
-func ParseSMTPMessage(id int, m *config.SMTPMessage, hostname string, mimeParser bool) *Message {
+func ParseSMTPMessage(mongo *MongoDB, m *config.SMTPMessage, hostname string, mimeParser bool) *Message {
 	arr := make([]*Path, 0)
 	for _, path := range m.To {
 		arr = append(arr, PathFromString(path))
 	}
 
+	id := mongo.NextId(arr[0].Mailbox)
 	msg := &Message{
-		Id:      id,
-		From:    PathFromString(m.From),
-		To:      arr,
-		Created: time.Now(),
-		Ip:      m.Host,
-		Unread:  true,
-		Starred: false,
-		Recent: true,
+		Id:      	bson.NewObjectId().Hex(),
+		Sequence:	id,
+		From:    	PathFromString(m.From),
+		To:      	arr,
+		Created: 	time.Now(),
+		Ip:      	m.Host,
+		Unread:  	true,
+		Starred: 	false,
+		Recent: 	true,
+		Deleted: 	false,
 	}
 
 	if mimeParser {
@@ -133,9 +137,9 @@ func ParseSMTPMessage(id int, m *config.SMTPMessage, hostname string, mimeParser
 		msg.Content = ContentFromString(m.Data)
 	}
 
-	recd := fmt.Sprintf("from %s ([%s]) by %s (Smtpd)\r\n  for <%s>; %s\r\n", m.Helo, m.Host, hostname, strconv.Itoa(msg.Id) + "@" + hostname, time.Now().Format(time.RFC1123Z))
+	recd := fmt.Sprintf("from %s ([%s]) by %s (Smtpd)\r\n  for <%s>; %s\r\n", m.Helo, m.Host, hostname, msg.Id + "@" + hostname, time.Now().Format(time.RFC1123Z))
 	//msg.Content.Headers["Delivered-To"]  = []string{msg.To}
-	msg.Content.Headers["Message-ID"] = []string{strconv.Itoa(msg.Id) + "@" + hostname}
+	msg.Content.Headers["Message-ID"] = []string{msg.Id + "@" + hostname}
 	msg.Content.Headers["Received"] = []string{recd}
 	msg.Content.Headers["Return-Path"] = []string{"<" + m.From + ">"}
 	return msg

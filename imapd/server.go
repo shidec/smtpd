@@ -415,14 +415,10 @@ func (c *Client) lsubHandler(hdr string, cmd string, arg string) {
 }
 
 func (c *Client) selectHandler(hdr string, cmd string, arg string) {
-	total, _ := c.server.Store.Total(c.user.Username)
-	unread, _ := c.server.Store.Unread(c.user.Username)
-	recent, _ := c.server.Store.Recent(c.user.Username)
-	nextId := c.server.Store.NextId("Messages")
-	c.Write("", "* " + strconv.Itoa(total) + " EXISTS")
-	c.Write("", "* " + strconv.Itoa(recent) + " RECENT")
-	c.Write("", "* OK [UNSEEN " + strconv.Itoa(unread) + "]")
-	c.Write("", "* OK [UIDNEXT " + strconv.Itoa(nextId) + "]")
+	c.Write("", "* " + strconv.Itoa(c.server.Store.Total(c.user.Username)) + " EXISTS")
+	c.Write("", "* " + strconv.Itoa(c.server.Store.Recent(c.user.Username)) + " RECENT")
+	c.Write("", "* OK [UNSEEN " + strconv.Itoa(c.server.Store.Unread(c.user.Username)) + "]")
+	c.Write("", "* OK [UIDNEXT " + strconv.Itoa(c.server.Store.NextId(c.user.Username)) + "]")
 	c.Write("", "* OK [UIDVALIDITY 250]")
 	c.Write("", "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
 	c.Write("", hdr + " OK [READ-WRITE] SELECT completed")
@@ -451,7 +447,7 @@ func (c *Client) uidHandler(hdr string, cmd string, arg string) {
 	re := regexp.MustCompile("(?i:FETCH) ([\\d\\:\\*\\,]+) \\(([A-z0-9\\s\\(\\)\\[\\]\\.-]+)\\)")
 	match := re.FindSubmatch([]byte(arg))
 	
-	c.logInfo("uidHandler:" + string(match[1]))
+	c.logInfo("uidHandler:a:" + string(match[1]))
 
 	seqSet, err := data.InterpretSequenceSet(string(match[1]))
 	if err != nil {
@@ -459,15 +455,19 @@ func (c *Client) uidHandler(hdr string, cmd string, arg string) {
 		return
 	}
 	
+	c.logInfo("uidHandler:b:" + strconv.Itoa(len(seqSet)))
+
 	searchByUID := strings.ToUpper(arg) == "UID "
 
 	var msgs []data.Message
 	if searchByUID {
+		c.logInfo("uidHandler:c0")
 		msgs = c.server.Store.MessageSetByUID(c.user.Username, seqSet)
 	} else {
+		c.logInfo("uidHandler:c1")
 		msgs = c.server.Store.MessageSetBySequenceNumber(c.user.Username, seqSet)
 	}
-	c.logInfo("" + strconv.Itoa(len(msgs)))
+	c.logInfo("Messages:" + strconv.Itoa(len(msgs)))
 	
 	
 	fetchParamString := string(match[2])
@@ -499,8 +499,7 @@ func (c *Client) uidHandler(hdr string, cmd string, arg string) {
 
 		c.server.Store.RemoveRecent(msg)
 
-		fullReply := fmt.Sprintf("%d FETCH (%s)",
-			msg.Id,
+		fullReply := fmt.Sprintf("%d FETCH (%s)", msg.Sequence,
 			fetchParams)
 
 		c.Write("", fullReply)
@@ -521,10 +520,28 @@ func (c *Client) statusHandler(hdr string, cmd string, arg string) {
 		return
 	}
 	*/
+	var flags []string
+	if strings.Contains(arg, "UIDNEXT") {
+		
+		flags = append(flags, fmt.Sprintf("UIDNEXT %d", c.server.Store.NextId(c.user.Username)))
+	}
 
-	unread, _ := c.server.Store.Unread(c.user.Username)
-	c.Write("", fmt.Sprintf("STATUS %s (UIDNEXT %d UNSEEN %d)",
-		"INBOX", c.server.Store.NextId("Messages"), unread))
+	if strings.Contains(arg, "MESSAGES") {
+		flags = append(flags, fmt.Sprintf("MESSAGES %d", c.server.Store.Total(c.user.Username)))
+	}
+
+	if strings.Contains(arg, "RECENT") {
+		flags = append(flags, fmt.Sprintf("RECENT %d", c.server.Store.Recent(c.user.Username)))
+	}
+
+	if strings.Contains(arg, "UNSEEN") {
+		flags = append(flags, fmt.Sprintf("UNSEEN %d", c.server.Store.UnreadCount(c.user.Username)))
+	}
+
+	flagList := strings.Join(flags, " ")
+
+
+	c.Write("", fmt.Sprintf("* STATUS %s (%s)", "INBOX", flagList))
 	c.Write("", c.argId + " OK STATUS Completed")
 }
 

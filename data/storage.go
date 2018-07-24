@@ -69,8 +69,7 @@ func (ds *DataStore) SaveMail() {
 		
 
 		if ds.Config.Storage == "mongodb" {
-			id := ds.Storage.(*MongoDB).AutoInc("Messages")
-			msg := ParseSMTPMessage(id, mc, mc.Domain, ds.Config.MimeParser)
+			msg := ParseSMTPMessage(ds.Storage.(*MongoDB), mc, mc.Domain, ds.Config.MimeParser)
 			mc.Hash, err = ds.Storage.(*MongoDB).Store(msg)
 
 			// if mongo conection is broken, try to reconnect only once
@@ -123,15 +122,23 @@ func (ds *DataStore) NextId(table string) int {
 	return ds.Storage.(*MongoDB).NextId(table)
 }
 
-func (ds *DataStore) Total(username string) (int, error) {
+func (ds *DataStore) TotalErr(username string) (int, error) {
+	return ds.Storage.(*MongoDB).TotalErr(username)
+}
+
+func (ds *DataStore) Total(username string) int {
 	return ds.Storage.(*MongoDB).Total(username)
 }
 
-func (ds *DataStore) Unread(username string) (int, error) {
+func (ds *DataStore) Unread(username string) int {
 	return ds.Storage.(*MongoDB).Unread(username)
 }
 
-func (ds *DataStore) Recent(username string) (int, error) {
+func (ds *DataStore) UnreadCount(username string) int {
+	return ds.Storage.(*MongoDB).UnreadCount(username)
+}
+
+func (ds *DataStore) Recent(username string) int {
 	return ds.Storage.(*MongoDB).Recent(username)
 }
 

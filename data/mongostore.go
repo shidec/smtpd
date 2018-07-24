@@ -2,8 +2,6 @@ package data
 
 import (
 	"fmt"
-	"strconv"
-	"encoding/base64"
 
 	"github.com/shidec/smtpd/config"
 	"github.com/shidec/smtpd/log"
@@ -64,28 +62,14 @@ func (mongo *MongoDB) Close() {
 	mongo.Session.Close()
 }
 
-func (mongo *MongoDB) NextId(table string) int {
-	count, _ := mongo.Sequences.Find(bson.M{"table": table}).Count()
+func (mongo *MongoDB) NextId(username string) int {
+	count, _ := mongo.Messages.Find(bson.M{"to.mailbox": username}).Count()
 	if count == 0 {
-		mongo.Sequences.Insert(bson.M{"table": table, "value": 1})
 		return 1
 	}else{
-		var seq *Sequences
-		mongo.Sequences.Find(bson.M{"table": table}).One(&seq)
-		return seq.Value
-	}
-}
-
-func (mongo *MongoDB) AutoInc(table string) int {
-	count, _ := mongo.Sequences.Find(bson.M{"table": table}).Count()
-	if count == 0 {
-		mongo.Sequences.Insert(bson.M{"table": table, "value": 2})
-		return 1
-	}else{
-		var seq Sequences
-		mongo.Sequences.Find(bson.M{"table": table}).One(&seq)
-		mongo.Sequences.Update(bson.M{"table": table}, bson.M{"$set" : bson.M{"value": seq.Value + 1}})	
-		return seq.Value
+		var m Message
+		mongo.Messages.Find(bson.M{"to.mailbox": username}).Select(bson.M{"sequence" : 1}).Sort("-sequence").Limit(1).One(&m)
+		return m.Sequence + 1
 	}
 }
 
@@ -100,7 +84,7 @@ func (mongo *MongoDB) Store(m *Message) (string, error) {
 		return "", err
 	}
 
-	uEnc := base64.URLEncoding.EncodeToString([]byte(strconv.Itoa(m.Id)))
+	uEnc := m.Id
 	return uEnc, nil
 }
 
@@ -108,6 +92,7 @@ func (mongo *MongoDB) List(start int, limit int) (*Messages, error) {
 	messages := &Messages{}
 	err := mongo.Messages.Find(bson.M{}).Sort("-_id").Skip(start).Limit(limit).Select(bson.M{
 		"id":          1,
+		"sequence":    1,
 		"from":        1,
 		"to":          1,
 		"attachments": 1,
@@ -145,7 +130,7 @@ func (mongo *MongoDB) Load(id string) (*Message, error) {
 	return result, nil
 }
 
-func (mongo *MongoDB) Total(username string) (int, error) {
+func (mongo *MongoDB) TotalErr(username string) (int, error) {
 	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
@@ -154,22 +139,42 @@ func (mongo *MongoDB) Total(username string) (int, error) {
 	return total, err
 }
 
-func (mongo *MongoDB) Unread(username string) (int, error) {
+func (mongo *MongoDB) Total(username string) int {
+	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username}).Count()
+	if err != nil {
+		log.LogError("Error loading message: %s", err)
+		total = 0
+	}
+	return total
+}
+
+func (mongo *MongoDB) Unread(username string) int {
+	total, _ := mongo.Messages.Find(bson.M{"to.mailbox": username,"unread": true}).Count()
+	if total == 0 {
+		return 0
+	}
+
+	var m Message
+	mongo.Messages.Find(bson.M{"to.mailbox": username, "unread": true}).Select(bson.M{"sequence" : 1}).Sort("-sequence").Limit(1).One(&m)
+	return m.Sequence
+}
+
+func (mongo *MongoDB) UnreadCount(username string) int {
 	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username,"unread": true}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
 	}
-	return total, err
+	return total
 }
 
-func (mongo *MongoDB) Recent(username string) (int, error) {
+func (mongo *MongoDB) Recent(username string) int {
 	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username,"recent": true}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
 	}
-	return total, err
+	return total
 }
 
 func (mongo *MongoDB) LoadAttachment(id string) (*Message, error) {
@@ -282,6 +287,7 @@ func (mongo *MongoDB) MessageSetBySequenceNumber(username string, set SequenceSe
 	}
 	// For each sequence range in the sequence set
 	for _, msgRange := range set {
+		fmt.Printf("Range:" + string(msgRange.Min) + ":" + string(msgRange.Max))	
 		msgs = append(msgs, mongo.messageRangeBy(username, msgRange)...)
 	}
 	return msgs
@@ -292,8 +298,9 @@ func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Me
 	// If Min is "*", meaning the last UID in the mailbox, Max should
 	// always be Nil
 	if seqRange.Min.Last() {
+		fmt.Printf("messageRangeBy:last")
 		msg := Message{}
-		mongo.Messages.Find(bson.M{"to.mailbox" : username}).Sort("-id").Limit(1).One(&msg)
+		mongo.Messages.Find(bson.M{"to.mailbox" : username}).Sort("-sequence").Limit(1).One(&msg)
 		msgs = append(msgs, msg)		
 		return msgs
 	}
@@ -322,7 +329,7 @@ func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Me
 	max, err := seqRange.Max.Value()
 	if seqRange.Max.Last() {
 		ms := Messages {}
-		mongo.Messages.Find(bson.M{"to.mailbox" : username, "id" : bson.M{"$gte": min}}).Sort("-id").All(&ms)
+		mongo.Messages.Find(bson.M{"to.mailbox" : username, "sequence" : bson.M{"$gte": min}}).Sort("-sequence").All(&ms)
 		for _, msg := range ms {
 			msgs = append(msgs, msg)	
 		}
@@ -330,7 +337,7 @@ func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Me
 		return msgs
 	} else {
 		ms := Messages {}
-		mongo.Messages.Find(bson.M{"to.mailbox" : username, "id" : bson.M{"$gte" : min, "$lte" : max}}).Sort("-nomor").All(&ms)
+		mongo.Messages.Find(bson.M{"to.mailbox" : username, "sequence" : bson.M{"$gte" : min, "$lte" : max}}).Sort("-sequence").All(&ms)
 
 		for _, msg := range ms {
 			msgs = append(msgs, msg)	
@@ -341,7 +348,7 @@ func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Me
 
 func (mongo *MongoDB) MessageByUID(username string, uid uint32) (Message, error) {
 	msg := Message{}
-	err := mongo.Messages.Find(bson.M{"to.mailbox" : username, "id" : uid}).One(&msg);
+	err := mongo.Messages.Find(bson.M{"to.mailbox" : username, "sequence" : uid}).One(&msg);
 	if err == nil {
 		return msg, nil
 	}
