@@ -20,6 +20,7 @@ import (
 	"github.com/shidec/smtpd/smtpd"
 	"github.com/shidec/smtpd/imapd"
 	"github.com/shidec/smtpd/web"
+	"github.com/shidec/smtpd/send"
 )
 
 var (
@@ -47,6 +48,12 @@ var (
 
 func main() {
 
+	send.SendMail("shidec@shidec-games.com", 
+		[]string{"shidec00@yahoo.com", "shidec@gmail.com"}, 
+		[]string{"shidec@uny.ac.id"},
+		"Ini judul",
+		"Ini <b>isi</b>",
+		[]string{"/root/pecel.jpg", "/root/smtpd.log"});
 	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
