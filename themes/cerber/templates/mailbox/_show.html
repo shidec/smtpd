@@ -14,6 +14,7 @@
 {{end}}
 
 {{define "content"}}
+	
 	<div id="MailBody" class="col-md-12">
 		{{$id := .message.Id}}
 		<div class="page-header">
@@ -21,6 +22,9 @@
 				{{if .ctx.User.IsSuperuser}}
 					<a class="btn btn-danger pull-right" href="/mail/delete/{{$id}}"><i class="glyphicon glyphicon-trash"></i></a>
 				{{end}}
+				<a class="btn btn-default pull-right" data-toggle="tooltip" title="Reply" href="/mail/compose/{{$id}}">
+				&nbsp;&nbsp;&nbsp;<span class="glyphicon glyphicon-share"></span>&nbsp;&nbsp;&nbsp;
+				</a>
 			</h2>
 		</div>
 		<dl class="dl-horizontal">
