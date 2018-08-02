@@ -72,6 +72,9 @@ func (p *Pagination) Paginate() {
 
 	//Offset calculation record
 	p.offset = int((p.page - 1) * p.limit)
+	if p.offset < 0{
+		p.offset = 0
+	}
 }
 
 func (p *Pagination) Html(style int) (output template.HTML) {
