@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"io/ioutil"
 	"math"
+	"strings"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/shidec/smtpd/config"
 	"github.com/shidec/smtpd/data"
 	"github.com/shidec/smtpd/log"
+	"github.com/shidec/smtpd/send"
 
 	"gopkg.in/mgo.v2/bson"
 )
@@ -103,6 +105,43 @@ func MailView(w http.ResponseWriter, r *http.Request, ctx *Context) (err error) 
 	} else {
 		http.NotFound(w, r)
 		return
+	}
+}
+
+func MailCompose(w http.ResponseWriter, r *http.Request, ctx *Context) (err error) {
+	id := ctx.Vars["id"]
+	
+
+	//we need a user to sign to
+	if ctx.User == nil {
+		log.LogTrace("This page requires a login.")
+		ctx.Session.AddFlash("This page requires a login.")
+		return LoginForm(w, r, ctx)
+	}
+
+	log.LogTrace("MailCompose:a")
+	if(id != "0"){
+		log.LogTrace("MailCompose:b")
+		log.LogTrace("Loading Mail <%s> from Mongodb", id)
+		m, err := ctx.Ds.Load(id)
+		if err == nil {
+
+			return RenderTemplate("mailbox/_compose.html", w, map[string]interface{}{
+				"ctx":     ctx,
+				"title":   "Mail",
+				"message": m,
+				"textBody": "> " + strings.Replace(m.Content.TextBody, "\n", "\n> ", -1),
+			})
+		}
+
+		http.NotFound(w, r)
+		return err
+	}else{
+		log.LogTrace("MailCompose:c")
+		return RenderTemplate("mailbox/_compose.html", w, map[string]interface{}{
+				"ctx":     ctx,
+				"title":   "Mail",
+			})
 	}
 }
 
@@ -203,6 +242,51 @@ func Login(w http.ResponseWriter, req *http.Request, ctx *Context) error {
 	}
 
 	return fmt.Errorf("Failed to login!")
+}
+
+func MailSend(w http.ResponseWriter, req *http.Request, ctx *Context) error {
+	l := &data.ComposeForm{
+		To: req.FormValue("to"),
+		Cc: req.FormValue("cc"),
+		Subject: req.FormValue("subject"),
+		Message: req.FormValue("message"),
+	}
+
+	if l.Validate() {
+		log.LogTrace("MailSend:" + l.To)
+		log.LogTrace("MailSend:" + l.Cc)
+
+		var ato []string
+		var acc []string
+
+		if strings.Contains(l.To, ",") {
+			ato = strings.Split(l.To, ",")	
+		}else{
+			ato = []string{l.To}
+		}
+		
+		if l.Cc != "" {		
+			if strings.Contains(l.Cc, ",") {
+				acc = strings.Split(l.Cc, ",")
+			}else{
+				acc = []string{l.Cc}
+			}
+		}
+
+		err := send.SendMail(ctx.User.Email, ato, acc, l.Subject, l.Message, []string{})
+		if err == nil {
+			ctx.Session.AddFlash("Email sent")
+		}else{
+			ctx.Session.AddFlash("Email failed to send")
+		}
+		
+		http.Redirect(w, req, reverse("Mails"), http.StatusSeeOther)
+
+		return nil
+	} else {
+		ctx.Session.AddFlash("Please fill required fields!")
+		return MailCompose(w, req, ctx)
+	}
 }
 
 func Logout(w http.ResponseWriter, req *http.Request, ctx *Context) error {

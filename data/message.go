@@ -86,6 +86,36 @@ type Attachment struct {
 	Size             int
 }
 
+type ComposeForm struct{
+	To 				string
+	Cc 				string
+	Subject			string
+	Message         string
+
+	Errors map[string]string
+}
+
+func (f *ComposeForm) Validate() bool {
+	f.Errors = make(map[string]string)
+
+	f.To = strings.TrimSpace(f.To)
+	f.Cc = strings.TrimSpace(f.Cc)
+
+	if f.To == "" {
+		f.Errors["To"] = "Please enter a valid destination"
+	}
+
+
+
+	/*	re := regexp.MustCompile(".+@.+\\..+")
+		matched := re.Match([]byte(f.Email))
+		if matched == false {
+			f.Errors["Email"] = "Please enter a valid email address"
+		}*/
+
+	return len(f.Errors) == 0
+}
+
 // TODO support nested MIME content
 func ParseSMTPMessage(mongo *MongoDB, m *config.SMTPMessage, hostname string, mimeParser bool) *Message {
 	arr := make([]*Path, 0)

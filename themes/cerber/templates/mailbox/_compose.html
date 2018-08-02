@@ -1,0 +1,58 @@
+{{define "title"}}Mail {{.message.Id}} :: Gleez SMTPD{{end}}
+
+{{define "script"}}
+	<script src="/public/js/jquery-1.11.1.min.js"></script>
+	<script src="/public/js/bootstrap.min.js"></script>
+	<script src="/public/js/incus.js"></script>
+	<script src="/public/js/notify.js"></script>
+{{end}}
+
+{{define "menu"}}
+	<li><a href="/">Home</a></li>
+	<li><a href="/status">Status</a></li>
+	<li class="active"><a href="/mails">Inbox <span id="NewMail" class="badge"></span></a></li>
+{{end}}
+
+{{define "content"}}
+	
+	<div id="LeftBody" class="col-md-2"></div>
+	<div id="MailBody" class="col-md-8">
+		<form action="/mail/send" method="POST" role="form">
+			<input class="form-control input-lg" type="hidden" name="id" value="{{.message.Id}}"/>
+		{{if .message }}
+		<dl class="dl-horizontal">
+		{{$id := .message.Id}}
+			<dt>To</dt>
+			<dd><input type="text" class="form-control input-lg" name="to" value="{{.message.From.Mailbox }}@{{.message.From.Domain }}"/><br/></dd>
+			<dt>Cc</dt>
+			<dd><input class="form-control input-lg" type="text" name="cc" value=""/><br/></dd>
+			<dt>Subject</dt>
+			<dd><input type="text" class="form-control" name="subject" value="re: {{.message.Subject }}"/><br/></dd>
+			<dt>Message</dt>
+			<dd><textarea class="form-control input-lg" name="message" rows="10">
+
+
+
+On {{.message.Created}} {{.message.From.Mailbox }}@{{.message.From.Domain }} wrote :
+{{.textBody}}</textarea></dd>
+		{{else}}
+			<dt>To</dt>
+			<dd><input class="form-control input-lg" type="text" name="to" value=""/></dd>
+			<dt>Cc</dt>
+			<dd><input class="form-control input-lg" type="text" name="cc" value=""/></dd>
+			<dt>Subject</dt>
+			<dd><input class="form-control input-lg" type="text" name="subject" value=""/></dd>
+			<dt>Message</dt>
+			<dd><textarea class="form-control input-lg" name="message" rows="10"></textarea></dd>
+		{{end}}
+		<br/>
+		<input type="submit" class="btn btn-lg btn-success btn-block pull-right" value="Send" style="width: 100px">
+		</dl>
+		</form>
+	</div>
+	<div id="LeftBody" class="col-md-2"></div>
+	<div class="col-md-12">
+		
+	</div>
+
+{{end}}

@@ -12,7 +12,9 @@
 	<li><a href="/status">Status</a></li>
 	<li class="active"><a href="/mails">Inbox <span id="NewMail" class="badge"></span></a></li>
 {{end}}
-
+{{ range .ctx.Session.Flashes }}
+	<div class="alert alert-primary" role="alert">{{ . }}</div>
+{{ end }}
 {{define "content"}}
 	<div class="row">
 		<div class="col-md-12">
@@ -37,9 +39,6 @@
 			<button type="button" class="btn btn-default" data-toggle="tooltip" title="Refresh">
 			    &nbsp;&nbsp;&nbsp;<span class="glyphicon glyphicon-refresh"></span>&nbsp;&nbsp;&nbsp;
 			</button>
-			<button type="button" class="btn btn-default" data-toggle="tooltip" title="Compose">
-			    &nbsp;&nbsp;&nbsp;<span class="glyphicon glyphicon-pencil"></span>&nbsp;&nbsp;&nbsp;
-			</button>
 
 			{{if .pagination.Total }}
 				<div class="pull-right">
@@ -51,7 +50,12 @@
 	</div>
 	<hr>
 	<div id="mails" class="row">
+		
+
 		<div class="col-md-12">
+			<a class="btn btn-default pull-right" data-toggle="tooltip" title="Compose" href="/mail/compose/0">
+				&nbsp;&nbsp;&nbsp;<span class="glyphicon glyphicon-pencil"></span>&nbsp;&nbsp;&nbsp;
+			</a>		
 			<!-- Nav tabs -->
 			<ul class="nav nav-tabs">
 				<li class="active"><a href="#mails" data-toggle="tab"><span class="glyphicon glyphicon-inbox">

@@ -89,6 +89,8 @@ func setupRoutes(cfg config.WebConfig) {
 	r.Path("/mail/{id:[0-9a-z]+}").Handler(handler(MailView)).Name("MailView").Methods("GET")
 	r.Path("/mail/attachment/{id:[0-9a-z]+}/{[*.*]}").Handler(handler(MailAttachment)).Name("MailAttachment").Methods("GET")
 	r.Path("/mail/delete/{id:[0-9a-z]+}").Handler(handler(MailDelete)).Name("MailDelete").Methods("GET")
+	r.Path("/mail/compose/{id:[0-9a-z]+}").Handler(handler(MailCompose)).Name("MailCompose").Methods("GET")
+	r.Path("/mail/send").Handler(handler(MailSend)).Name("MailSend").Methods("POST")
 
 	// Login
 	r.Path("/login").Handler(handler(Login)).Methods("POST")

@@ -241,13 +241,6 @@ func (s *Server) handleClient(c *Client) {
 
 	// This is our command reading loop
 	for i := 0; i < 100; i++ {
-		/*
-		if c.state == 2 {
-			// Special case, does not use IMAP command format
-			c.processData()
-			continue
-		}
-		*/
 
 		if c.state == 99 {
 			// Special case, does not use IMAP command format
@@ -327,6 +320,10 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 		c.user = nil
 		c.Write("", hdr + " OK LOGOUT completed\r\n")
 		c.server.killClient(c)
+		//return
+	case "CLOSE":
+		c.state = 1
+		c.Write("", hdr + " OK CLOSE completed\r\n")
 		//return
 	case "AUTHENTICATE":
 		c.authHandler(hdr, cmd, arg)
@@ -499,8 +496,7 @@ func (c *Client) uidHandler(hdr string, cmd string, arg string) {
 
 		c.server.Store.RemoveRecent(msg)
 
-		fullReply := fmt.Sprintf("%d FETCH (%s)", msg.Sequence,
-			fetchParams)
+		fullReply := fmt.Sprintf("* %d FETCH (%s)", msg.Sequence, fetchParams)
 
 		c.Write("", fullReply)
 	}

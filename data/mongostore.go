@@ -89,6 +89,7 @@ func (mongo *MongoDB) Store(m *Message) (string, error) {
 }
 
 func (mongo *MongoDB) List(start int, limit int) (*Messages, error) {
+	log.LogError("List: %d : %d", start, limit)
 	messages := &Messages{}
 	err := mongo.Messages.Find(bson.M{}).Sort("-_id").Skip(start).Limit(limit).Select(bson.M{
 		"id":          1,
