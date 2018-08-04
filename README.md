@@ -1,9 +1,33 @@
-smtpd + imapd
+smtpd + imapd + pop3d
 =========================================================
+
+Testing POP3
+=========================================================
+* Open mail client such as Thunderbird, or Mobile Phone Email App
+* Add new email account, don't use autodetect setting, then click "Done" button.
+![Mail client setup](images/mail_client_setup.png "Mail Client setup")
+* Click "Continue" when it say can't verify account.
+![Mail client setup](images/email_setting.jpg "Tested on Samsung Email App")
+
+Testing SMTP
+=========================================================
+* Open web interface (http://domain:10025)
+* Register an account
+* Send email to this account
+* Open web interface (http://domain:10025) to read email
+
+Testing IMAP
+=========================================================
+* Open mail client such as Thunderbird
+* Add new email account, don't use autodetect setting, then click "Done" button.
+![Mail client setup](images/mail_client_setup.png "Mail Client setup")
+
 
 Features
 =========================================================
 
+* Pop3
+* Send email using Mail Transfer Agent
 * ESMTP server implementing RFC5321
 * Support for SMTP AUTH (RFC4954) and PIPELINING (RFC2920)
 * Multipart MIME support
@@ -19,13 +43,12 @@ Features
 Development Status
 =========================================================
 
-SMTPD + IMAPD is currently development phase.
+SMTPD + IMAPD + POP3 is currently development phase.
 
 
 TODO
 =========================================================
 
-* POP3
 * Rest API
 * Inline resources in Web interface
 * Per user/domain mailbox in web interface
@@ -55,19 +78,6 @@ This will place smtpd in the background and continue running
 You may also put another process to watch your smtpd process and re-start it
 if something goes wrong.
 
-
-Testing SMTP
-=========================================================
-* Open web interface (http://domain:10025)
-* Register an account
-* Send email to this account
-* Open web interface (http://domain:10025) to read email
-
-Testing IMAP
-=========================================================
-* Open mail client such as Thunderbird
-* Add new email account, don't use autodetect setting, then click "Done" button.
-![Mail client setup](mail_client_setup.png "Mail Client setup")
 
 Credits
 =========================================================
