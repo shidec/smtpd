@@ -400,7 +400,7 @@ func (c *Client) listHandler(hdr string, cmd string, arg string) {
 		// Blank selector means request directory separator
 		c.Write("", "* LIST (\\Noselect) \"/\" \"\"")
 	} else if arg == "*" {
-		c.Write("", "* LIST () \"/\" \"INBOX\"")
+		c.Write("", "* LIST (\\HasNoChildren) \"/\" \"INBOX\"")
 	}
 
 	c.Write("", hdr + " OK LIST completed")
@@ -593,7 +593,8 @@ func (c *Client) enterState(state State) {
 }
 
 func (c *Client) greet() {
-	c.Write("*", "OK IMAP4rev1 Service Ready")
+	c.Write("*", "OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] ImapServer ready.")
+	//c.Write("*", "OK IMAP4rev1 Service Ready")
 	c.state = 1
 }
 

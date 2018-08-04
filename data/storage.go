@@ -178,3 +178,23 @@ func (ds *DataStore) SaveSpamIP(ip string, email string) {
 		log.LogError("Error inserting Spam IPAddress: %s", err)
 	}
 }
+
+func (ds *DataStore) Pop3GetStat(username string) (int, int, error) {
+	return ds.Storage.(*MongoDB).Pop3GetStat(username)
+}
+
+func (ds *DataStore) Pop3GetList(username string) (Messages, error) {
+	return ds.Storage.(*MongoDB).Pop3GetList(username)
+}
+
+func (ds *DataStore) Pop3GetUidl(username string) (Messages, error) {
+	return ds.Storage.(*MongoDB).Pop3GetUidl(username)
+}
+
+func (ds *DataStore) Pop3GetRetr(username string, sequence int) (Message, error) {
+	return ds.Storage.(*MongoDB).Pop3GetRetr(username, sequence)
+}
+
+func (ds *DataStore) Pop3GetDele(username string, sequence int) error {
+	return ds.Storage.(*MongoDB).Pop3GetDele(username, sequence)
+}

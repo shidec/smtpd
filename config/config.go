@@ -22,6 +22,16 @@ type SMTPMessage struct {
 	Notify chan int
 }
 
+// MtaConfig houses the MTA (Mail Transfer Agent) configuration
+// for sending email.
+type MtaConfig struct {
+	Available   	bool
+	Host      		string
+	Port         	int
+	Username        string
+	Password    	string
+}
+
 // SmtpConfig houses the SMTP server configuration - not using pointers
 // so that I can pass around copies of the object safely.
 type SmtpConfig struct {
@@ -70,6 +80,7 @@ type Pop3Config struct {
 	Ip4address     net.IP
 	Ip4port        int
 	Domain         string
+	MaxClients      int
 	MaxIdleSeconds int
 }
 
@@ -104,12 +115,18 @@ var (
 	Config *config.Config
 
 	// Parsed specific configs
+	mtaConfig       *MtaConfig
 	smtpConfig      *SmtpConfig
 	imapConfig      *ImapConfig
 	pop3Config      *Pop3Config
 	webConfig       *WebConfig
 	dataStoreConfig *DataStoreConfig
 )
+
+// GetSmtpConfig returns a copy of the SmtpConfig object
+func GetMtaConfig() MtaConfig {
+	return *mtaConfig
+}
 
 // GetSmtpConfig returns a copy of the SmtpConfig object
 func GetSmtpConfig() SmtpConfig {
@@ -150,6 +167,7 @@ func LoadConfig(filename string) error {
 	// Validate sections
 	requireSection(messages, "logging")
 	requireSection(messages, "smtp")
+	requireSection(messages, "mta")
 	requireSection(messages, "imap")
 	requireSection(messages, "pop3")
 	requireSection(messages, "web")
@@ -175,6 +193,10 @@ func LoadConfig(filename string) error {
 	requireOption(messages, "smtp", "max.message.bytes")
 	requireOption(messages, "smtp", "store.messages")
 	requireOption(messages, "smtp", "xclient")
+
+	requireOption(messages, "mta", "available")
+	requireOption(messages, "mta", "host")
+	requireOption(messages, "mta", "port")
 
 	requireOption(messages, "imap", "available")
 	requireOption(messages, "imap", "ip4.address")
@@ -211,6 +233,10 @@ func LoadConfig(filename string) error {
 	}
 
 	if err = parseSmtpConfig(); err != nil {
+		return err
+	}
+
+	if err = parseMtaConfig(); err != nil {
 		return err
 	}
 
@@ -423,6 +449,49 @@ func parseSmtpConfig() error {
 }
 
 // parseImapConfig trying to catch config errors early
+func parseMtaConfig() error {
+	mtaConfig = new(MtaConfig)
+	section := "mta"
+
+	option := "available"
+	flag, err := Config.Bool(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	mtaConfig.Available = flag
+
+	// Parse IP4 address only, error on IP6.
+	option = "host"
+	str, err := Config.String(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	mtaConfig.Host = str
+
+	option = "port"
+	mtaConfig.Port, err = Config.Int(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+
+	option = "username"
+	str, err = Config.String(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	mtaConfig.Username = str
+
+	option = "password"
+	str, err = Config.String(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	mtaConfig.Password = str
+
+	return nil
+}
+
+// parseImapConfig trying to catch config errors early
 func parseImapConfig() error {
 	imapConfig = new(ImapConfig)
 	section := "imap"
@@ -579,6 +648,13 @@ func parsePop3Config() error {
 	pop3Config.MaxIdleSeconds, err = Config.Int(section, option)
 	if err != nil {
 		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+
+	option = "max.clients"
+	pop3Config.MaxClients, err = Config.Int(section, option)
+	if err != nil {
+		pop3Config.MaxClients = 50
+		//return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
 	}
 
 	return nil

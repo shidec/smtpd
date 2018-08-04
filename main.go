@@ -19,13 +19,13 @@ import (
 	"github.com/shidec/smtpd/log"
 	"github.com/shidec/smtpd/smtpd"
 	"github.com/shidec/smtpd/imapd"
+	"github.com/shidec/smtpd/pop3d"
 	"github.com/shidec/smtpd/web"
-	//"github.com/shidec/smtpd/send"
 )
 
 var (
 	// Build info, populated during linking by goxc
-	VERSION    = "1.1"
+	VERSION    = "2.1"
 	BUILD_DATE = "undefined"
 
 	// Command line flags
@@ -47,14 +47,6 @@ var (
 )
 
 func main() {
-	/*
-	send.SendMail("shidec@shidec-games.com", 
-		[]string{"shidec00@yahoo.com", "shidec@gmail.com"}, 
-		[]string{"shidec@uny.ac.id"},
-		"Ini judul",
-		"Ini <b>isi</b>",
-		[]string{"/root/pecel.jpg", "/root/smtpd.log"});
-	*/
 	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
@@ -145,9 +137,18 @@ func main() {
 	// Startup IMAP server, block until it exits
 	if imapConfig.Available {
 		imapServer := imapd.NewImapServer(imapConfig, ds)
-		imapServer.Start()
+		go imapServer.Start()
 		// Wait for active connections to finish
-		imapServer.Drain()
+		//imapServer.Drain()
+	}
+
+	pop3Config := config.GetPop3Config()
+	// Startup IMAP server, block until it exits
+	if pop3Config.Available {
+		pop3Server := pop3d.NewPop3Server(pop3Config, ds)
+		pop3Server.Start()
+		// Wait for active connections to finish
+		pop3Server.Drain()
 	}
 }
 
