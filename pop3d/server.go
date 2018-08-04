@@ -37,12 +37,14 @@ const (
 
 
 var commands = map[string]bool{
+	"CAPA":     true,
 	"USER":     true,
 	"PASS":     true,
 	"STAT":     true,
 	"LIST":     true,
 	"UIDL":     true,
 	"RETR":     true,
+	"TOP":     true,
 	"DELE":     true,
 	"APOP":     true,
 	"QUIT":     true,
@@ -272,6 +274,8 @@ func (c *Client) handle(cmd string, arg string, line string) {
 	}
 
 	switch cmd {
+	case "CAPA":
+		c.capaHandler(cmd, arg)
 	case "USER":
 		c.userHandler(cmd, arg)
 	case "PASS":
@@ -288,7 +292,9 @@ func (c *Client) handle(cmd string, arg string, line string) {
 		c.uidlHandler(cmd, arg)
 		//return	
 	case "RETR":
-		c.retrHandler(cmd, arg)
+		c.retrHandler(cmd, arg)	
+	case "TOP":
+		c.topHandler(cmd, arg)
 	case "DELE":
 		c.deleHandler(cmd, arg)	
 	/*	
@@ -317,6 +323,23 @@ func (c *Client) userHandler(cmd string, arg string) {
 	c.Write("+OK " + arg)
 }
 
+func (c *Client) capaHandler(cmd string, arg string) {
+
+	if arg == "" {
+		c.Write("+OK")
+		c.Write("USER")
+		c.Write("TOP")
+		c.Write("UIDL")
+		c.Write(".")
+	}else{
+		if commands[arg] {
+			c.Write("+OK")
+		}else{
+			c.Write("-ERR Not implemented")
+		}
+	}
+}
+
 func (c *Client) passHandler(cmd string, arg string) {
 	if(c.username == ""){
 		c.Write("-ERR NO username given")
@@ -329,7 +352,8 @@ func (c *Client) passHandler(cmd string, arg string) {
 		c.Write("-ERR Authentication error")
 	}else{
 		c.state = STATE_TRANSACTION
-		c.Write("+OK Logged in")
+		count, _, _ := c.server.Store.Pop3GetStat(c.user.Username)
+		c.Write("+OK Mailbox open, " + strconv.Itoa(count) + " messages")
 	}
 }
 
@@ -381,6 +405,35 @@ func (c *Client) retrHandler(cmd string, arg string) {
  
 	c.Write("+OK " + strconv.Itoa(msg.Content.Size) + " octets")
 	c.Write(msg.Content.Body)		
+	c.Write(".")
+}
+
+func (c *Client) topHandler(cmd string, arg string) {
+	if c.state != STATE_TRANSACTION {
+		c.Write("-ERR not authenticated")
+		return
+	}
+	
+	sp := strings.Index(arg, " ");
+	if sp < 0 {
+		c.Write("-ERR argument error")
+		return
+	}	
+	sid := arg[0:sp]
+	//scount := arg[(sp + 1):]
+
+	id, _ := strconv.Atoi(sid)
+	//_, _ := strconv.Atoi(scount)
+	//_, _ := strconv.Atoi(scount)
+
+
+	msg, _ := c.server.Store.Pop3GetRetr(c.user.Username, id)
+ 	c.Write("+OK " + strconv.Itoa(msg.Content.Size) + " octets")
+	sp = strings.Index(msg.Content.Body, "Content-Type");
+	sp1 := strings.Index(msg.Content.Body[(sp+1):], "\r\n");
+	header := msg.Content.Body[0:(sp + sp1 + 3)]
+
+	c.Write(header)		
 	c.Write(".")
 }
 
