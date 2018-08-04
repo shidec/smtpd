@@ -4,10 +4,9 @@ smtpd + imapd + pop3d
 Testing POP3
 =========================================================
 * Open mail client such as Thunderbird, or Mobile Phone Email App
-* Add new email account, don't use autodetect setting, then click "Done" button.
-![Mail client setup](images/mail_client_setup.png "Mail Client setup")
 * Click "Continue" when it say can't verify account.
 ![Mail client setup](images/email_setting.jpg "Tested on Samsung Email App")
+* It tested successfully on Thuderbird and Samsung Email App
 
 Testing SMTP
 =========================================================
