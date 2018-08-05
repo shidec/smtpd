@@ -108,6 +108,7 @@ type DataStoreConfig struct {
 	MongoUri      string
 	MongoDb       string
 	MongoColl     string
+	Domain        string
 }
 
 var (
@@ -814,6 +815,14 @@ func parseDataStoreConfig() error {
 		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
 	}
 	dataStoreConfig.MongoColl = str
+
+	option = "domain"
+	section = "smtp"
+	str, err = Config.String(section, option)
+	if err != nil {
+		return fmt.Errorf("Failed to parse [%v]%v: '%v'", section, option, err)
+	}
+	dataStoreConfig.Domain = str
 
 	return nil
 }

@@ -15,14 +15,12 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	//"gopkg.in/mgo.v2/bson"
 
 	"github.com/shidec/smtpd/config"
 	"github.com/shidec/smtpd/data"
@@ -30,6 +28,12 @@ import (
 )
 
 type State int
+
+const (
+	STATE_UNAUTHORIZED State = 1
+	STATE_AUTHORIZED State = 2
+	STATE_LOGGIN_IN State = 3
+)
 
 var commands = map[string]bool{
 	"CAPABILITY":     true,
@@ -39,6 +43,7 @@ var commands = map[string]bool{
 	"LSUB":     true,
 	"LOGOUT":     true,
 	"NOOP":     true,
+	"CREATE":     true,
 	"CLOSE":     true,
 	"EXPUNGE":     true,
 	"SELECT":     true,
@@ -192,7 +197,7 @@ func (s *Server) Start() {
 
 			s.sem <- 1 // Wait for active queue to drain.
 			go s.handleClient(&Client{
-				state:      1,
+				state:      STATE_UNAUTHORIZED,
 				server:     s,
 				conn:       conn,
 				remoteHost: host,
@@ -242,7 +247,7 @@ func (s *Server) handleClient(c *Client) {
 	// This is our command reading loop
 	for i := 0; i < 100; i++ {
 
-		if c.state == 99 {
+		if c.state == STATE_LOGGIN_IN {
 			// Special case, does not use IMAP command format
 			line, _ := c.readLine()
 			c.processAuth(line)
@@ -263,11 +268,11 @@ func (s *Server) handleClient(c *Client) {
 			// not an EOF
 			c.logWarn("Connection error: %v", err)
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-				c.Write("221", "Idle timeout, bye bye")
+				c.Write(c.argId + " NO Idle timeout, bye bye")
 				break
 			}
 
-			c.Write("221", "Connection error, sorry")
+			c.Write(c.argId + " Connection error, sorry")
 			break
 		}
 
@@ -284,67 +289,62 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 	c.argId = hdr
 	c.logTrace("In state %d, got command '%s', args '%s'", c.state, cmd, arg)
 
-	// Check against valid IMAP commands
-	if cmd == "" {
-		c.Write("500", "Speak up")
-		//return
-	}
-
-	if cmd != "" && !commands[cmd] {
-		c.Write("500", fmt.Sprintf("Syntax error, %v command unrecognized", cmd))
+	if cmd == "" || !commands[cmd] {
+		c.Write(fmt.Sprintf("%s Syntax error, %v command unrecognized", c.argId, cmd))
 		c.logWarn("Unrecognized command: %v", cmd)
 	}
 
 	switch cmd {
 	case "LOGIN":
-		c.loginHandler(hdr, cmd, arg)
+		c.loginHandler(cmd, arg)
 		//return
 	case "CAPABILITY":
-		c.capabilityHandler(hdr, cmd, arg)
+		c.capabilityHandler(cmd, arg)
 		//return
 	case "NOOP":
-		c.Write("", hdr + " OK I have sucessfully done nothing")
+		c.Write(c.argId + " OK I have sucessfully done nothing")
 		//return
 	case "LIST":
 		// Reset session
-		c.listHandler(hdr, cmd, arg)
+		c.listHandler(cmd, arg)
 		//return
 	case "LSUB":
-		c.lsubHandler(hdr, cmd, arg)
+		c.lsubHandler(cmd, arg)
 	case "SELECT":
-		c.selectHandler(hdr, cmd, arg)	
+		c.selectHandler(cmd, arg)	
+	case "CREATE":
+		c.createHandler(cmd, arg)		
 		//return
 	case "LOGOUT":
-		c.Write("", "* BYE IMAP4rev1 server logging out\r\n")
-		c.state = 1
+		c.Write("* BYE IMAP4rev1 server logging out\r\n")
+		c.state = STATE_UNAUTHORIZED
 		c.user = nil
-		c.Write("", hdr + " OK LOGOUT completed\r\n")
+		c.Write(c.argId + " OK LOGOUT completed\r\n")
 		c.server.killClient(c)
 		//return
 	case "CLOSE":
-		c.state = 1
-		c.Write("", hdr + " OK CLOSE completed\r\n")
+		c.state = STATE_UNAUTHORIZED
+		c.Write(c.argId + " OK CLOSE completed\r\n")
 		//return
 	case "AUTHENTICATE":
-		c.authHandler(hdr, cmd, arg)
+		c.authHandler(cmd, arg)
 	case "UID":
-		c.uidHandler(hdr, cmd, arg)	
+		c.uidHandler(cmd, arg)	
 	case "STATUS":
-		c.statusHandler(hdr, cmd, arg)		
+		c.statusHandler(cmd, arg)		
 	case "STARTTLS":
 		c.tlsHandler()
 		//return
 	default:
 		c.errors++
 		if c.errors > 3 {
-			c.Write("500", "Too many unrecognized commands")
+			c.Write(c.argId +  " NO Too many unrecognized commands")
 			c.server.killClient(c)
 		}
 	}
 }
 
-// GREET state -> waiting for HELO
-func (c *Client) loginHandler(hdr string, cmd string, arg string) {
+func (c *Client) loginHandler(cmd string, arg string) {
 	arg = strings.Replace(arg, "\"", "", -1)
 	sp0 := strings.Index(arg, "@")
 	sp1 := strings.Index(arg, " ")
@@ -359,113 +359,134 @@ func (c *Client) loginHandler(hdr string, cmd string, arg string) {
 	var err error
 	c.user, err = c.server.Store.Login(username, passwd)
 	if c.user == nil && err != nil {
-		c.Write("", hdr + " NO Incorrect username/password")
+		c.state = STATE_UNAUTHORIZED
+		c.Write(c.argId + " NO Incorrect username/password")
 	}else{
-		c.state = 1
-		c.Write("", hdr + " OK Authenticated")
+		c.state = STATE_AUTHORIZED
+		c.Write(c.argId + " OK Authenticated")
 	}
 }
 
-func (c *Client) capabilityHandler(hdr string, cmd string, arg string) {
-	c.Write("", "* CAPABILITY IMAP4rev1 AUTH=PLAIN")
-	c.Write("", hdr + " OK CAPABILITY completed")
+func (c *Client) capabilityHandler(cmd string, arg string) {
+	c.Write("* CAPABILITY IMAP4rev1 AUTH=PLAIN")
+	c.Write(c.argId + " OK CAPABILITY completed")
+}
+
+func (c *Client) createHandler(cmd string, arg string) {
+	if c.state != STATE_AUTHORIZED {
+		c.Write(c.argId + " NO not authenticated")
+		return
+	}
+
+	c.Write(c.argId + " OK create completed")
 }
 
 func (c *Client) processAuth(line string) {
 	loginRE := regexp.MustCompile("(?:[A-z0-9]+)?\x00([A-z0-9]+)\x00([A-z0-9]+)")
-	c.state = 1
 
 	data, err := base64.StdEncoding.DecodeString(line)
 	if err != nil {
-		c.Write("", "* BAD Invalid auth details")
+		c.state = STATE_UNAUTHORIZED
+		//c.Write("* BAD Invalid auth details")
+		c.Write(c.argId + " NO Invalid auth details")
 		return
 	}
 	match := loginRE.FindSubmatch(data)
 	if len(match) != 3 {
-		c.Write("", c.argId + " NO Incorrect username/password")
+		c.state = STATE_UNAUTHORIZED
+		c.Write(c.argId + " NO Incorrect username/password")
 		return
 	}
 
 	c.user, err = c.server.Store.Login(string(match[1]), string(match[2]))
 	if err != nil {
-		c.Write("", c.argId + " NO Incorrect username/password")
+		c.state = STATE_UNAUTHORIZED
+		c.Write(c.argId + " NO Incorrect username/password")
 		return
 	}
-	//c.SetState(StateAuthenticated)
-	c.Write("", c.argId + " OK Authenticated")
+
+	c.state = STATE_AUTHORIZED
+	c.Write(c.argId + " OK Authenticated")
 }
 
-func (c *Client) listHandler(hdr string, cmd string, arg string) {
+func (c *Client) listHandler(cmd string, arg string) {
+	if c.state != STATE_AUTHORIZED {
+		c.Write(c.argId + " NO not authenticated")
+		return
+	}
+
 	if arg == "" {
 		// Blank selector means request directory separator
-		c.Write("", "* LIST (\\Noselect) \"/\" \"\"")
+		c.Write("* LIST (\\Noselect) \"/\" \"\"")
 	} else if arg == "*" {
-		c.Write("", "* LIST (\\HasNoChildren) \"/\" \"INBOX\"")
+		c.Write("* LIST (\\HasNoChildren) \"/\" \"INBOX\"")
 	}
 
-	c.Write("", hdr + " OK LIST completed")
+	c.Write(c.argId + " OK LIST completed")
 }
 
-func (c *Client) lsubHandler(hdr string, cmd string, arg string) {
-	c.Write("", "* LIST () \"/\" \"INBOX\"")
-	c.Write("", hdr + " OK LIST completed")
-}
-
-func (c *Client) selectHandler(hdr string, cmd string, arg string) {
-	c.Write("", "* " + strconv.Itoa(c.server.Store.Total(c.user.Username)) + " EXISTS")
-	c.Write("", "* " + strconv.Itoa(c.server.Store.Recent(c.user.Username)) + " RECENT")
-	c.Write("", "* OK [UNSEEN " + strconv.Itoa(c.server.Store.Unread(c.user.Username)) + "]")
-	c.Write("", "* OK [UIDNEXT " + strconv.Itoa(c.server.Store.NextId(c.user.Username)) + "]")
-	c.Write("", "* OK [UIDVALIDITY 250]")
-	c.Write("", "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
-	c.Write("", hdr + " OK [READ-WRITE] SELECT completed")
-}	
-
-func (c *Client) authHandler(hdr string, cmd string, arg string) {
-	
-		switch arg {
-		case "PLAIN":
-			c.logInfo("Got PLAIN authentication: %s")
-			c.state = 99
-			c.Write("", "+")
-		default:
-			c.logTrace("Unsupported authentication mechanism %v", arg)
-			c.Write("", hdr + " BAD Unsupported authentication mechanism")
-		}
-}
-
-func (c *Client) uidHandler(hdr string, cmd string, arg string) {
-	/*
-	if !c.assertSelected(args.ID(), readOnly) {
+func (c *Client) lsubHandler(cmd string, arg string) {
+	if c.state != STATE_AUTHORIZED {
+		c.Write(c.argId + " NO not authenticated")
 		return
 	}
-	*/
+
+	c.Write("* LIST () \"/\" \"INBOX\"")
+	c.Write(c.argId + " OK LIST completed")
+}
+
+func (c *Client) selectHandler(cmd string, arg string) {
+	if c.state != STATE_AUTHORIZED {
+		c.Write(c.argId + " NO not authenticated")
+		return
+	}
+
+	c.Write("* " + strconv.Itoa(c.server.Store.Total(c.user.Username)) + " EXISTS")
+	c.Write("* " + strconv.Itoa(c.server.Store.Recent(c.user.Username)) + " RECENT")
+	c.Write("* OK [UNSEEN " + strconv.Itoa(c.server.Store.Unread(c.user.Username)) + "]")
+	c.Write("* OK [UIDNEXT " + strconv.Itoa(c.server.Store.NextId(c.user.Username)) + "]")
+	c.Write("* OK [UIDVALIDITY 250]")
+	c.Write("* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	c.Write(c.argId + " OK [READ-WRITE] SELECT completed")
+}	
+
+func (c *Client) authHandler(cmd string, arg string) {	
+	switch arg {
+	case "PLAIN":
+		c.logInfo("Got PLAIN authentication")
+		c.state = STATE_LOGGIN_IN
+		c.Write("+")
+	default:
+		c.logTrace("Unsupported authentication mechanism %v", arg)
+		c.Write(c.argId + " BAD Unsupported authentication mechanism")
+	}
+}
+
+func (c *Client) uidHandler(cmd string, arg string) {
+	if c.state != STATE_AUTHORIZED {
+		c.Write(c.argId + " NO not authenticated")
+		return
+	}
+
 	// Fetch the messages
 	re := regexp.MustCompile("(?i:FETCH) ([\\d\\:\\*\\,]+) \\(([A-z0-9\\s\\(\\)\\[\\]\\.-]+)\\)")
 	match := re.FindSubmatch([]byte(arg))
-	
-	c.logInfo("uidHandler:a:" + string(match[1]))
 
 	seqSet, err := data.InterpretSequenceSet(string(match[1]))
 	if err != nil {
-		c.Write("", hdr + " NO "+err.Error())
+		c.Write(c.argId + " NO "+err.Error())
 		return
 	}
-	
-	c.logInfo("uidHandler:b:" + strconv.Itoa(len(seqSet)))
 
 	searchByUID := strings.ToUpper(arg) == "UID "
+	//searchByUID := cmd == "UID"
 
 	var msgs []data.Message
 	if searchByUID {
-		c.logInfo("uidHandler:c0")
 		msgs = c.server.Store.MessageSetByUID(c.user.Username, seqSet)
 	} else {
-		c.logInfo("uidHandler:c1")
 		msgs = c.server.Store.MessageSetBySequenceNumber(c.user.Username, seqSet)
-	}
-	c.logInfo("Messages:" + strconv.Itoa(len(msgs)))
-	
+	}	
 	
 	fetchParamString := string(match[2])
 	if searchByUID && !strings.Contains(fetchParamString, "UID") {
@@ -476,46 +497,34 @@ func (c *Client) uidHandler(hdr string, cmd string, arg string) {
 		fetchParams, err := fetch(fetchParamString, msg)
 		if err != nil {
 			if err == ErrUnrecognisedParameter {
-				c.Write("", c.argId + " BAD Unrecognised Parameter")
+				c.Write(c.argId + " BAD Unrecognised Parameter")
 				return
 			}
 
-			c.Write("", c.argId + " BAD")
+			c.Write(c.argId + " BAD")
 			return
 		}
-
-		/*
-		if c.mailboxWritable == readWrite {
-			msg = msg.RemoveFlags(types.FlagRecent)
-			msg, err = msg.Save()
-			if err != nil {
-				// TODO: this error is not fatal, but should still be logged
-			}
-		}
-		*/
 
 		c.server.Store.RemoveRecent(msg)
 
 		fullReply := fmt.Sprintf("* %d FETCH (%s)", msg.Sequence, fetchParams)
 
-		c.Write("", fullReply)
+		c.Write(fullReply)
 	}
 
 	if searchByUID {
-		c.Write("", c.argId + " OK UID FETCH Completed")
+		c.Write(c.argId + " OK UID FETCH Completed")
 	} else {
-		c.Write("", c.argId + " OK FETCH Completed")
+		c.Write(c.argId + " OK UID FETCH Completed")
 	}
 }
 
-func (c *Client) statusHandler(hdr string, cmd string, arg string) {
-	/*
-	mailbox, err := c.User.MailboxByName(args.Arg(0))
-	if err != nil {
-		c.writeResponse(args.ID(), "NO "+err.Error())
+func (c *Client) statusHandler(cmd string, arg string) {
+	if c.state != STATE_AUTHORIZED {
+		c.Write(c.argId + " NO not authenticated")
 		return
 	}
-	*/
+
 	var flags []string
 	if strings.Contains(arg, "UIDNEXT") {
 		
@@ -537,23 +546,23 @@ func (c *Client) statusHandler(hdr string, cmd string, arg string) {
 	flagList := strings.Join(flags, " ")
 
 
-	c.Write("", fmt.Sprintf("* STATUS %s (%s)", "INBOX", flagList))
-	c.Write("", c.argId + " OK STATUS Completed")
+	c.Write(fmt.Sprintf("* STATUS %s (%s)", "INBOX", flagList))
+	c.Write(c.argId + " OK STATUS Completed")
 }
 
 func (c *Client) tlsHandler() {
 	if c.tls_on {
-		c.Write("502", "Already running in TLS")
+		c.Write(c.argId + " NO Already running in TLS")
 		return
 	}
 
 	if c.server.TLSConfig == nil {
-		c.Write("502", "TLS not supported")
+		c.Write(c.argId + " NO TLS not supported")
 		return
 	}
 
 	log.LogTrace("Ready to start TLS")
-	c.Write("220", "Ready to start TLS")
+	c.Write(c.argId + " OK Ready to start TLS")
 
 	// upgrade to TLS
 	var tlsConn *tls.Conn
@@ -576,26 +585,15 @@ func (c *Client) tlsHandler() {
 		c.flush()
 	} else {
 		c.logWarn("Could not TLS handshake:%v", err)
-		c.Write("550", "Handshake error")
+		c.Write(c.argId + " NO Handshake error")
 	}
 
 	c.state = 1
 }
 
-func (c *Client) reject() {
-	c.Write("421", "Too busy. Try again later.")
-	c.server.closeClient(c)
-}
-
-func (c *Client) enterState(state State) {
-	c.state = state
-	c.logTrace("Entering state %v", state)
-}
-
 func (c *Client) greet() {
-	c.Write("*", "OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] ImapServer ready.")
-	//c.Write("*", "OK IMAP4rev1 Service Ready")
-	c.state = 1
+	c.Write("* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] ImapServer ready.")
+	c.state = STATE_UNAUTHORIZED
 }
 
 func (c *Client) flush() {
@@ -609,22 +607,12 @@ func (c *Client) nextDeadline() time.Time {
 	return time.Now().Add(time.Duration(c.server.maxIdleSeconds) * time.Second)
 }
 
-func (c *Client) Write(code string, text ...string) {
+func (c *Client) Write(text string) {
 	c.conn.SetDeadline(c.nextDeadline())
-	if len(text) == 1 {
-		c.logTrace(">> Sent %d bytes: %s >>", len(text[0]), text[0])
-		c.conn.Write([]byte(code + " " + text[0] + "\r\n"))
-		c.bufout.Flush()
-		return
-	}
-	for i := 0; i < len(text)-1; i++ {
-		c.logTrace(">> Sent %d bytes: %s >>", len(text[i]), text[i])
-		c.conn.Write([]byte(code + "-" + text[i] + "\r\n"))
-	}
-	c.logTrace(">> Sent %d bytes: %s >>", len(text[len(text)-1]), text[len(text)-1])
-	c.conn.Write([]byte(code + " " + text[len(text)-1] + "\r\n"))
-
+	c.logTrace(">> Sent %d bytes: %s >>", len(text), text)
+	c.conn.Write([]byte(text + "\r\n"))
 	c.bufout.Flush()
+	return
 }
 
 // readByteLine reads a line of input into the provided buffer. Does
@@ -671,6 +659,10 @@ func (c *Client) readLine() (line string, err error) {
 func (c *Client) parseCmd(line string) (hdr string, cmd string, arg string, ok bool) {
 	line = strings.TrimRight(line, "\r\n")
 	sp := strings.Index(line, " ");
+	if sp < 0 {
+		return "", "", "", false
+	}
+	
 	shdr := line[0:sp]
 	scmd := line[(sp + 1):]
 	sp2 := strings.Index(scmd, " ")
@@ -709,11 +701,6 @@ func (c *Client) reset() {
 	c.recipients = nil
 }
 
-func (c *Client) ooSeq(cmd string) {
-	c.Write("503", fmt.Sprintf("Command %v is out of sequence", cmd))
-	c.logWarn("Wasn't expecting %v here", cmd)
-}
-
 // Session specific logging methods
 func (c *Client) logTrace(msg string, args ...interface{}) {
 	log.LogTrace("IMAP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
@@ -733,32 +720,4 @@ func (c *Client) logError(msg string, args ...interface{}) {
 	// Update metrics
 	//expErrorsTotal.Add(1)
 	log.LogError("IMAP[%v]<%v> %v", c.remoteHost, c.id, fmt.Sprintf(msg, args...))
-}
-
-func parseHelloArgument(arg string) (string, error) {
-	domain := arg
-	if idx := strings.IndexRune(arg, ' '); idx >= 0 {
-		domain = arg[:idx]
-	}
-	if domain == "" {
-		return "", fmt.Errorf("Invalid domain")
-	}
-	return domain, nil
-}
-
-// Debug mail data to file
-func (c *Client) saveMailDatatoFile(msg string) {
-	filename := fmt.Sprintf("%s/%s-%s-%s.raw", c.server.DebugPath, c.remoteHost, c.from, time.Now().Format("Jan-2-2006-3:04:00pm"))
-	f, err := os.Create(filename)
-
-	if err != nil {
-		log.LogError("Error saving file %v", err)
-	}
-
-	defer f.Close()
-	n, err := io.WriteString(f, msg)
-
-	if err != nil {
-		log.LogError("Error saving file %v: %v", n, err)
-	}
 }

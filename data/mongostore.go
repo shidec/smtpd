@@ -11,7 +11,7 @@ import (
 )
 
 type MongoDB struct {
-	Config   config.DataStoreConfig
+	Config 	 config.DataStoreConfig
 	Session  *mgo.Session
 	Messages *mgo.Collection
 	Users    *mgo.Collection
@@ -359,10 +359,10 @@ func (mongo *MongoDB) MessageByUID(username string, uid uint32) (Message, error)
 	return msg, err
 }
 
-func (mongo *MongoDB) Pop3GetStat(username string) (int, int, error) {
+func (mongo *MongoDB) Pop3GetStat(username string, domain string) (int, int, error) {
 	msg := StatQuery{}
 
-	err := mongo.Messages.Pipe([]bson.M{bson.M{"$match": bson.M{"to.mailbox": username}},
+	err := mongo.Messages.Pipe([]bson.M{bson.M{"$match": bson.M{"to.mailbox": username, "to.domain": domain}},
 		bson.M{"$group": bson.M{"_id": nil, "count": bson.M{"$sum":1}, "total": bson.M{"$sum":"$content.size"}}}}).One(&msg)
 
 	if err != nil {
@@ -372,10 +372,10 @@ func (mongo *MongoDB) Pop3GetStat(username string) (int, int, error) {
 	return msg.Count, msg.Total, nil
 }
 
-func (mongo *MongoDB) Pop3GetList(username string) (Messages, error)  {
+func (mongo *MongoDB) Pop3GetList(username string, domain string) (Messages, error)  {
 	msgs := Messages{}
 
-	err := mongo.Messages.Find(bson.M{"to.mailbox": username}).Select(bson.M{"sequence": 1, "content.size": 1}).All(&msgs)
+	err := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain}).Select(bson.M{"sequence": 1, "content.size": 1}).All(&msgs)
 
 	if err != nil {
 		log.LogError("Error loading messages: %s", err)
@@ -384,10 +384,10 @@ func (mongo *MongoDB) Pop3GetList(username string) (Messages, error)  {
 	return msgs, nil
 }
 
-func (mongo *MongoDB) Pop3GetUidl(username string) (Messages, error)  {
+func (mongo *MongoDB) Pop3GetUidl(username string, domain string) (Messages, error)  {
 	msgs := Messages{}
 
-	err := mongo.Messages.Find(bson.M{"to.mailbox": username}).Select(bson.M{"sequence": 1, "id": 1}).All(&msgs)
+	err := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain}).Select(bson.M{"sequence": 1, "id": 1}).All(&msgs)
 
 	if err != nil {
 		log.LogError("Error loading messages: %s", err)
@@ -396,9 +396,9 @@ func (mongo *MongoDB) Pop3GetUidl(username string) (Messages, error)  {
 	return msgs, nil
 }
 
-func (mongo *MongoDB) Pop3GetRetr(username string, sequence int) (Message, error)  {
+func (mongo *MongoDB) Pop3GetRetr(username string, domain string, sequence int) (Message, error)  {
 	msg := Message{}
-	err := mongo.Messages.Find(bson.M{"to.mailbox": username, "sequence": sequence}).One(&msg)
+	err := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain, "sequence": sequence}).One(&msg)
 
 	if err != nil {
 		log.LogError("Error loading messages: %s", err)
@@ -407,7 +407,7 @@ func (mongo *MongoDB) Pop3GetRetr(username string, sequence int) (Message, error
 	return msg, nil
 }
 
-func (mongo *MongoDB) Pop3GetDele(username string, sequence int) error  {
+func (mongo *MongoDB) Pop3GetDele(username string, domain string, sequence int) error  {
 	err := mongo.Messages.Remove(bson.M{"to.mailbox": username, "sequence": sequence})
 
 	if err != nil {

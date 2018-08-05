@@ -484,16 +484,6 @@ func (c *Client) Write(text string) {
 	c.conn.Write([]byte(text + "\r\n"))
 	c.bufout.Flush()
 	return
-	/*
-	for i := 0; i < len(text)-1; i++ {
-		c.logTrace(">> Sent %d bytes: %s >>", len(text[i]), text[i])
-		c.conn.Write([]byte(code + "-" + text[i] + "\r\n"))
-	}
-	c.logTrace(">> Sent %d bytes: %s >>", len(text[len(text)-1]), text[len(text)-1])
-	c.conn.Write([]byte(code + " " + text[len(text)-1] + "\r\n"))
-
-	c.bufout.Flush()
-	*/
 }
 
 // readByteLine reads a line of input into the provided buffer. Does

@@ -7,11 +7,13 @@ import (
 
 	"github.com/shidec/smtpd/config"
 	"github.com/shidec/smtpd/log"
+	"github.com/shidec/smtpd/send"
 	"gopkg.in/mgo.v2/bson"
 )
 
 type DataStore struct {
 	Config         config.DataStoreConfig
+	Domain         string
 	Storage        interface{}
 	SaveMailChan   chan *config.SMTPMessage
 	NotifyMailChan chan interface{}
@@ -70,6 +72,29 @@ func (ds *DataStore) SaveMail() {
 
 		if ds.Config.Storage == "mongodb" {
 			msg := ParseSMTPMessage(ds.Storage.(*MongoDB), mc, mc.Domain, ds.Config.MimeParser)
+
+			sfrom := msg.From.Mailbox + "@" + msg.From.Domain
+			var ato []string
+
+			for _, path := range msg.To {
+				if path.Domain != mc.Domain {
+					sto := path.Mailbox + "@" + path.Domain
+					ato = append(ato, sto)
+					log.LogTrace("Remote address : " + sto)
+				}
+			}
+
+			if len(ato) > 0 {
+				log.LogTrace("Not for local addres, send it")
+				
+				err := send.SendMail(sfrom, ato, []string{}, msg.Subject, msg.Content.HtmlBody, []string{})
+				if err == nil {
+					log.LogTrace("Email sent")
+				}else{
+					log.LogError("Email failed to be sent :" + err.Error())
+				}
+			}
+
 			mc.Hash, err = ds.Storage.(*MongoDB).Store(msg)
 
 			// if mongo conection is broken, try to reconnect only once
@@ -180,21 +205,21 @@ func (ds *DataStore) SaveSpamIP(ip string, email string) {
 }
 
 func (ds *DataStore) Pop3GetStat(username string) (int, int, error) {
-	return ds.Storage.(*MongoDB).Pop3GetStat(username)
+	return ds.Storage.(*MongoDB).Pop3GetStat(username, ds.Config.Domain)
 }
 
 func (ds *DataStore) Pop3GetList(username string) (Messages, error) {
-	return ds.Storage.(*MongoDB).Pop3GetList(username)
+	return ds.Storage.(*MongoDB).Pop3GetList(username, ds.Config.Domain)
 }
 
 func (ds *DataStore) Pop3GetUidl(username string) (Messages, error) {
-	return ds.Storage.(*MongoDB).Pop3GetUidl(username)
+	return ds.Storage.(*MongoDB).Pop3GetUidl(username, ds.Config.Domain)
 }
 
 func (ds *DataStore) Pop3GetRetr(username string, sequence int) (Message, error) {
-	return ds.Storage.(*MongoDB).Pop3GetRetr(username, sequence)
+	return ds.Storage.(*MongoDB).Pop3GetRetr(username, ds.Config.Domain, sequence)
 }
 
 func (ds *DataStore) Pop3GetDele(username string, sequence int) error {
-	return ds.Storage.(*MongoDB).Pop3GetDele(username, sequence)
+	return ds.Storage.(*MongoDB).Pop3GetDele(username, ds.Config.Domain, sequence)
 }
