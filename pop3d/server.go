@@ -91,6 +91,13 @@ type Client struct {
 	id         int64
 	tlsConn    *tls.Conn
 	trusted    bool
+	uids       []Uid
+}
+
+type Uid struct {
+	id    int
+	seq   int
+	uid   string
 }
 
 // Init a new Client object
@@ -386,14 +393,98 @@ func (c *Client) uidlHandler(cmd string, arg string) {
 		return
 	}
 	msgs, _ := c.server.Store.Pop3GetUidl(c.user.Username)
- 
+ 	
+ 	c.uids = []Uid{}
+ 	var uid Uid
+
 	c.Write("+OK")
-	for _, msg := range msgs {
-		c.Write(strconv.Itoa(msg.Sequence) + " " + msg.Id)		
+	for i, msg := range msgs {
+		uid = Uid{}
+		uid.id = i + 1
+		uid.seq = msg.Sequence
+		uid.uid = msg.Id
+		c.uids = append(c.uids, uid) 
+
+		//c.Write(strconv.Itoa(msg.Sequence) + " " + msg.Id)
+		log.LogTrace("map_id: " + strconv.Itoa(uid.id) + " " + strconv.Itoa(uid.seq) + " " + uid.uid)		
+		c.Write(strconv.Itoa(uid.id) + " " + uid.uid)		
 	}
 	c.Write(".")
 }
 
+func (c *Client) retrHandler(cmd string, arg string) {
+	if c.state != STATE_TRANSACTION {
+		c.Write("-ERR not authenticated")
+		return
+	}
+	
+	id, _ := strconv.Atoi(arg)
+	if id <= len(c.uids)  {
+		log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
+		msg, _ := c.server.Store.Pop3GetRetr(c.user.Username, c.uids[id - 1].seq)
+	 
+		c.Write("+OK " + strconv.Itoa(msg.Content.Size) + " octets")
+		c.Write(msg.Content.Body)		
+		c.Write(".")	
+	} else {
+		c.Write("-ERR invalid id")
+	}
+}
+
+func (c *Client) topHandler(cmd string, arg string) {
+	if c.state != STATE_TRANSACTION {
+		c.Write("-ERR not authenticated")
+		return
+	}
+	
+	sp := strings.Index(arg, " ");
+	if sp < 0 {
+		c.Write("-ERR argument error")
+		return
+	}	
+	sid := arg[0:sp]
+	//scount := arg[(sp + 1):]
+
+	id, _ := strconv.Atoi(sid)
+	//_, _ := strconv.Atoi(scount)
+	//_, _ := strconv.Atoi(scount)
+
+	if id <= len(c.uids)  {
+		log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
+		msg, _ := c.server.Store.Pop3GetRetr(c.user.Username, c.uids[id - 1].seq)
+	 	c.Write("+OK " + strconv.Itoa(msg.Content.Size) + " octets")
+		sp = strings.Index(msg.Content.Body, "Content-Type");
+		sp1 := strings.Index(msg.Content.Body[(sp+1):], "\r\n");
+		header := msg.Content.Body[0:(sp + sp1 + 3)]
+
+		c.Write(header)		
+		c.Write(".")	
+	} else {
+		c.Write("-ERR invalid id")
+	}
+}
+
+func (c *Client) deleHandler(cmd string, arg string) {
+	if c.state != STATE_TRANSACTION {
+		c.Write("-ERR not authenticated")
+		return
+	}
+
+	id, _ := strconv.Atoi(arg)
+	if id <= len(c.uids)  {
+		log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
+		err := c.server.Store.Pop3GetDele(c.user.Username, c.uids[id - 1].seq)
+	 	
+	 	if err != nil {
+	 		c.Write("-ERR " + err.Error())
+	 	}
+		c.Write("+OK")
+	} else {
+		c.Write("-ERR invalid id")
+	}
+}
+
+/*
 func (c *Client) retrHandler(cmd string, arg string) {
 	if c.state != STATE_TRANSACTION {
 		c.Write("-ERR not authenticated")
@@ -451,6 +542,7 @@ func (c *Client) deleHandler(cmd string, arg string) {
  	}
 	c.Write("+OK")
 }
+*/
 
 func (c *Client) reject() {
 	c.Write("-ERR Too busy. Try again later.")
