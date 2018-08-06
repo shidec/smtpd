@@ -408,7 +408,7 @@ func (mongo *MongoDB) Pop3GetRetr(username string, domain string, sequence int) 
 }
 
 func (mongo *MongoDB) Pop3GetDele(username string, domain string, sequence int) error  {
-	err := mongo.Messages.Remove(bson.M{"to.mailbox": username, "sequence": sequence})
+	err := mongo.Messages.Remove(bson.M{"to.mailbox": username, "to.domain": domain, "sequence": sequence})
 
 	if err != nil {
 		log.LogError("Error loading messages: %s", err)

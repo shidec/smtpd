@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+	"encoding/base64"
+    "os"
 
 	"github.com/shidec/smtpd/config"
 	"github.com/shidec/smtpd/log"
@@ -87,7 +89,13 @@ func (ds *DataStore) SaveMail() {
 			if len(ato) > 0 {
 				log.LogTrace("Not for local addres, send it")
 				
-				err := send.SendMail(sfrom, ato, []string{}, msg.Subject, msg.Content.HtmlBody, []string{})
+				ats := []string{}
+				for _ , at := range msg.Attachments {
+					at.SaveToFile()
+					ats = append(ats, "/tmp/" + at.FileName)
+				}
+
+				err := send.SendMail(sfrom, ato, []string{}, msg.Subject, msg.Content.HtmlBody, ats)
 				if err == nil {
 					log.LogTrace("Email sent")
 				}else{
@@ -120,6 +128,29 @@ func (ds *DataStore) SaveMail() {
 			}
 		}
 	}
+}
+
+func (at *Attachment) SaveToFile() error {
+	dec, err := base64.StdEncoding.DecodeString(at.Body)
+    if err != nil {
+        return err
+    }
+
+    f, err := os.Create("/tmp/" + at.FileName)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+
+    if _, err := f.Write(dec); err != nil {
+        return err
+    }
+
+    if err := f.Sync(); err != nil {
+        return err
+    }
+
+    return nil
 }
 
 // Check if host address is in greylist
