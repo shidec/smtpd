@@ -3,7 +3,7 @@ package imapd
 import (
 	"errors"
 	"fmt"
-	//"net/textproto"
+	"net/textproto"
 	"regexp"
 	"strings"
 	"github.com/shidec/smtpd/data"
@@ -30,7 +30,7 @@ func init() {
 	registerFetchParam("RFC822\\.SIZE", fetchRfcSize)
 	registerFetchParam("INTERNALDATE", fetchInternalDate)
 	registerFetchParam("BODY(?:\\.PEEK)?\\[HEADER\\]", fetchHeaders)
-	//registerFetchParam("BODY(?:\\.PEEK)?"+"\\[HEADER\\.FIELDS \\(([A-z\\s-]+)\\)\\]", fetchHeaderSpecificFields)
+	registerFetchParam("BODY(?:\\.PEEK)?"+"\\[HEADER\\.FIELDS \\(([A-z\\s-]+)\\)\\]", fetchHeaderSpecificFields)
 	registerFetchParam("BODY(?:\\.PEEK)?\\[TEXT\\]", fetchBody)
 	registerFetchParam("BODY(?:\\.PEEK)?\\[\\]", fetchFullText)
 }
@@ -83,22 +83,24 @@ func registerFetchParam(regex string, handler func(string, data.Message, bool) s
 
 // Fetch the UID of the mail message
 func fetchUID(param string, m data.Message, peekOnly bool) string {
-	return fmt.Sprintf("UID %d", m.Id)
+	return fmt.Sprintf("UID %d", m.Sequence)
 }
 
 func fetchFlags(param string, m data.Message, peekOnly bool) string {
 	
 	var flags []string
 	if m.Unread {
-		flags = append(flags, "UNSEEN")
+		//UNSEEN
+		flags = append(flags, "\\Seen")
 	}
 
 	if m.Recent {
-		flags = append(flags, "RECENT")
+		//RECENT
+		flags = append(flags, "\\Recent")
 	}
 
 	flagList := strings.Join(flags, " ")
-	return fmt.Sprintf("FLAGS (%s UID %d)", flagList, m.Sequence)
+	return fmt.Sprintf("FLAGS (%s) UID %d", flagList, m.Sequence)
 	
 	//return fmt.Sprintf("FLAGS (UNSEEN RECENT)")
 }
@@ -124,24 +126,25 @@ func fetchHeaders(param string, m data.Message, peekOnly bool) string {
 	return fmt.Sprintf("BODY%s[HEADER] {%d}\r\n%s", peekStr, hdrLen, hdr)
 }
 
-/*
-func fetchHeaderSpecificFields(m data.Message, peekOnly bool) string {
+
+func fetchHeaderSpecificFields(param string, m data.Message, peekOnly bool) string {
 	if !peekOnly {
 		fmt.Printf("TODO: Peek not requested, mark all as non-recent\n")
 	}
-	fields := strings.Split(args[1], " ")
-	hdrs := m.Header()
+	fields := strings.Split(param, " ")
+	hdrs := m.Content.Headers
 	requestedHeaders := make(textproto.MIMEHeader)
 	replyFieldList := make([]string, len(fields))
 	for i, key := range fields {
 		replyFieldList[i] = "\"" + key + "\""
 		// If the key exists in the headers, copy it over
-		v := hdrs.Get(key)
-		if v != "" {
-			requestedHeaders.Add(key, v)
+		if v, ok := hdrs[key]; ok {
+			if len(v) > 0 {
+    			requestedHeaders.Add(key, v[0])
+    		}
 		}
 	}
-	hdr := util.MIMEHeaderToString(requestedHeaders)
+	hdr := data.MIMEHeaderToString(requestedHeaders)
 	hdrLen := len(hdr)
 
 	return fmt.Sprintf("BODY[HEADER.FIELDS (%s)] {%d}\r\n%s",
@@ -150,7 +153,6 @@ func fetchHeaderSpecificFields(m data.Message, peekOnly bool) string {
 		hdr)
 
 }
-*/
 
 func fetchBody(param string, m data.Message, peekOnly bool) string {
 	body := fmt.Sprintf("%s\r\n", m.Content.Body)

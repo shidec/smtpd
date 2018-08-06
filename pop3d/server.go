@@ -406,7 +406,7 @@ func (c *Client) uidlHandler(cmd string, arg string) {
 		c.uids = append(c.uids, uid) 
 
 		//c.Write(strconv.Itoa(msg.Sequence) + " " + msg.Id)
-		log.LogTrace("map_id: " + strconv.Itoa(uid.id) + " " + strconv.Itoa(uid.seq) + " " + uid.uid)		
+		//log.LogTrace("map_id: " + strconv.Itoa(uid.id) + " " + strconv.Itoa(uid.seq) + " " + uid.uid)		
 		c.Write(strconv.Itoa(uid.id) + " " + uid.uid)		
 	}
 	c.Write(".")
@@ -420,7 +420,7 @@ func (c *Client) retrHandler(cmd string, arg string) {
 	
 	id, _ := strconv.Atoi(arg)
 	if id <= len(c.uids)  {
-		log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
+		//log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
 		msg, _ := c.server.Store.Pop3GetRetr(c.user.Username, c.uids[id - 1].seq)
 	 
 		c.Write("+OK " + strconv.Itoa(msg.Content.Size) + " octets")
@@ -450,7 +450,7 @@ func (c *Client) topHandler(cmd string, arg string) {
 	//_, _ := strconv.Atoi(scount)
 
 	if id <= len(c.uids)  {
-		log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
+		//log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
 		msg, _ := c.server.Store.Pop3GetRetr(c.user.Username, c.uids[id - 1].seq)
 	 	c.Write("+OK " + strconv.Itoa(msg.Content.Size) + " octets")
 		sp = strings.Index(msg.Content.Body, "Content-Type");
@@ -472,7 +472,7 @@ func (c *Client) deleHandler(cmd string, arg string) {
 
 	id, _ := strconv.Atoi(arg)
 	if id <= len(c.uids)  {
-		log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
+		//log.LogTrace("map_id: " + strconv.Itoa(c.uids[id - 1].seq))
 		err := c.server.Store.Pop3GetDele(c.user.Username, c.uids[id - 1].seq)
 	 	
 	 	if err != nil {

@@ -33,6 +33,7 @@ const (
 	STATE_UNAUTHORIZED State = 1
 	STATE_AUTHORIZED State = 2
 	STATE_LOGGIN_IN State = 3
+	STATE_SELECTED State = 4
 )
 
 var commands = map[string]bool{
@@ -47,6 +48,8 @@ var commands = map[string]bool{
 	"CLOSE":     true,
 	"EXPUNGE":     true,
 	"SELECT":     true,
+	"SUBSCRIBE":     true,
+	"UNSUBSCRIBE":     true,
 	"EXAMINE":     true,
 	"STATUS":     true,
 	"UID":     true,
@@ -331,7 +334,11 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 	case "UID":
 		c.uidHandler(cmd, arg)	
 	case "STATUS":
-		c.statusHandler(cmd, arg)		
+		c.statusHandler(cmd, arg)
+	case "SUBSCRIBE":
+		c.subHandler(cmd, arg)
+	case "UNSUBSCRIBE":
+		c.unsubHandler(cmd, arg)		
 	case "STARTTLS":
 		c.tlsHandler()
 		//return
@@ -370,6 +377,14 @@ func (c *Client) loginHandler(cmd string, arg string) {
 func (c *Client) capabilityHandler(cmd string, arg string) {
 	c.Write("* CAPABILITY IMAP4rev1 AUTH=PLAIN")
 	c.Write(c.argId + " OK CAPABILITY completed")
+}
+
+func (c *Client) subHandler(cmd string, arg string) {
+	c.Write(c.argId + " OK subscribed")
+}
+
+func (c *Client) unsubHandler(cmd string, arg string) {
+	c.Write(c.argId + " OK unsubscribed")
 }
 
 func (c *Client) createHandler(cmd string, arg string) {
@@ -445,8 +460,8 @@ func (c *Client) selectHandler(cmd string, arg string) {
 	c.Write("* " + strconv.Itoa(c.server.Store.Recent(c.user.Username)) + " RECENT")
 	c.Write("* OK [UNSEEN " + strconv.Itoa(c.server.Store.Unread(c.user.Username)) + "]")
 	c.Write("* OK [UIDNEXT " + strconv.Itoa(c.server.Store.NextId(c.user.Username)) + "]")
-	c.Write("* OK [UIDVALIDITY 250]")
-	c.Write("* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	c.Write("* OK [UIDVALIDITY 1533266910]")
+	c.Write("* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Limited")
 	c.Write(c.argId + " OK [READ-WRITE] SELECT completed")
 }	
 
@@ -515,7 +530,7 @@ func (c *Client) uidHandler(cmd string, arg string) {
 	if searchByUID {
 		c.Write(c.argId + " OK UID FETCH Completed")
 	} else {
-		c.Write(c.argId + " OK UID FETCH Completed")
+		c.Write(c.argId + " OK FETCH Completed")
 	}
 }
 
