@@ -21,6 +21,9 @@ Testing IMAP
 * Add new email account, don't use autodetect setting, then click "Done" button.
 ![Mail client setup](images/mail_client_setup.png "Mail Client setup")
 
+SMPTPD -> Postfix connection diagram
+=========================================================
+![SMPTPD -> Postfix connection diagram](images/smtpd_diagram.png "SMPTPD -> Postfix connection diagram")
 
 Features
 =========================================================
