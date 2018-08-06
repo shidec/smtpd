@@ -158,7 +158,7 @@ func Stop() {
 // ServeHTTP builds the context and passes onto the real handler
 func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Create the context
-	ctx, err := NewContext(req)
+	ctx, err := NewContext(req, webConfig.Domain)
 	if err != nil {
 		log.LogError("Failed to create context: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

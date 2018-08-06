@@ -15,6 +15,7 @@ type Context struct {
 	Session   *sessions.Session
 	DataStore *data.DataStore
 	IsJson    bool
+	Domain	  string
 	User      *data.User
 	ClientIp  string
 	Ds        *data.MongoDB
@@ -41,7 +42,7 @@ func headerMatch(req *http.Request, name string, value string) bool {
 	return false
 }
 
-func NewContext(req *http.Request) (*Context, error) {
+func NewContext(req *http.Request, domain string) (*Context, error) {
 	vars := mux.Vars(req)
 	sess, err := sessionStore.Get(req, "gsmtpd")
 	ctx := &Context{
@@ -50,6 +51,7 @@ func NewContext(req *http.Request) (*Context, error) {
 		DataStore: DataStore,
 		ClientIp:  parseRemoteAddr(req),
 		IsJson:    headerMatch(req, "Accept", "application/json"),
+		Domain:	   domain,
 		Ds:        DataStore.Storage.(*data.MongoDB),
 	}
 

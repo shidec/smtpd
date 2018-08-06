@@ -17,7 +17,7 @@
 	
 	<div id="LeftBody" class="col-md-2"></div>
 	<div id="MailBody" class="col-md-8">
-		<form action="/mail/send" method="POST" role="form">
+		<form action="/mail/send" enctype="multipart/form-data" method="POST" role="form">
 			<input class="form-control input-lg" type="hidden" name="id" value="{{.message.Id}}"/>
 		{{if .message }}
 		<dl class="dl-horizontal">
@@ -35,6 +35,8 @@
 
 On {{.message.Created}} {{.message.From.Mailbox }}@{{.message.From.Domain }} wrote :
 {{.textBody}}</textarea></dd>
+			<dt>Attachment</dt>
+			<dd><input type="file" class="form-control" name="attachment"/><br/></dd>
 		{{else}}
 			<dt>To</dt>
 			<dd><input class="form-control input-lg" type="text" name="to" value=""/></dd>
@@ -44,6 +46,8 @@ On {{.message.Created}} {{.message.From.Mailbox }}@{{.message.From.Domain }} wro
 			<dd><input class="form-control input-lg" type="text" name="subject" value=""/></dd>
 			<dt>Message</dt>
 			<dd><textarea class="form-control input-lg" name="message" rows="10"></textarea></dd>
+			<dt>Attachment</dt>
+			<dd><input type="file" class="form-control" name="attachment"/><br/></dd>
 		{{end}}
 		<br/>
 		<input type="submit" class="btn btn-lg btn-success btn-block pull-right" value="Send" style="width: 100px">

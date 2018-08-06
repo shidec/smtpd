@@ -99,6 +99,7 @@ type WebConfig struct {
 	RedisPort        int
 	RedisChannel     string
 	CookieSecret     string
+	Domain          string
 }
 
 type DataStoreConfig struct {

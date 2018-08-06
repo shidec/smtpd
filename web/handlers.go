@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"io"
+	"os"
 	"io/ioutil"
 	"math"
 	"strings"
@@ -170,7 +172,7 @@ func MailList(w http.ResponseWriter, r *http.Request, ctx *Context) (err error) 
 		return
 	}
 
-	messages, err := ctx.Ds.List(p.Offset(), p.Limit())
+	messages, err := ctx.Ds.List(ctx.User.Username, ctx.Domain, p.Offset(), p.Limit())
 	if err == nil {
 		return RenderTemplate("mailbox/_list.html", w, map[string]interface{}{
 			"ctx":        ctx,
@@ -256,6 +258,26 @@ func MailSend(w http.ResponseWriter, req *http.Request, ctx *Context) error {
 		log.LogTrace("MailSend:" + l.To)
 		log.LogTrace("MailSend:" + l.Cc)
 
+		
+		att := []string{}
+		file, handler, err := req.FormFile("attachment")
+        if err != nil {
+            log.LogTrace("Upload attachment failed")
+        }else{
+        	//defer file.Close() 
+        	//fmt.Fprintf(w, "%v", handler.Header)
+	        f, err := os.OpenFile("/tmp/" + handler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
+	        if err != nil {
+	        	file.Close() 
+	            log.LogTrace("Upload attachment failed")
+	        }else{
+	        	io.Copy(f, file)
+	        	file.Close() 
+	        	f.Close()
+	        	att = append(att, "/tmp/" + handler.Filename)	
+	        }
+		}       
+
 		var ato []string
 		var acc []string
 
@@ -273,7 +295,7 @@ func MailSend(w http.ResponseWriter, req *http.Request, ctx *Context) error {
 			}
 		}
 
-		err := send.SendMail(ctx.User.Email, ato, acc, l.Subject, l.Message, []string{})
+		err = send.SendMail(ctx.User.Email, ato, acc, l.Subject, l.Message, att)
 		if err == nil {
 			ctx.Session.AddFlash("Email sent")
 		}else{

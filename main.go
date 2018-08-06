@@ -117,13 +117,16 @@ func main() {
 	ds := data.NewDataStore()
 
 	webConfig := config.GetWebConfig()
+	smtpConfig := config.GetSmtpConfig()
+
+	webConfig.Domain = smtpConfig.Domain
 	// Start HTTP server
 	if webConfig.Available {
 		web.Initialize(webConfig, ds)
 		go web.Start()
 	}
 
-	smtpConfig := config.GetSmtpConfig()
+	
 	// Startup SMTP server, block until it exits
 	if smtpConfig.Available {
 		smtpServer = smtpd.NewSmtpServer(smtpConfig, ds)

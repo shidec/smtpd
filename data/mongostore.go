@@ -90,10 +90,10 @@ func (mongo *MongoDB) Store(m *Message) (string, error) {
 	return uEnc, nil
 }
 
-func (mongo *MongoDB) List(start int, limit int) (*Messages, error) {
+func (mongo *MongoDB) List(username, domain string, start int, limit int) (*Messages, error) {
 	log.LogError("List: %d : %d", start, limit)
 	messages := &Messages{}
-	err := mongo.Messages.Find(bson.M{}).Sort("-_id").Skip(start).Limit(limit).Select(bson.M{
+	err := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain}).Sort("-_id").Skip(start).Limit(limit).Select(bson.M{
 		"id":          1,
 		"sequence":    1,
 		"from":        1,
