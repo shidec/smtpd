@@ -6,7 +6,7 @@ Testing POP3
 * Open mail client such as Thunderbird, or Mobile Phone Email App
 * Click "Continue" when it say can't verify account.
 ![Mail client setup](images/email_setting.jpg "Tested on Samsung Email App")
-* It tested successfully on Thuderbird and Samsung Email App
+* It tested successfully (receive & send) on Thuderbird and Samsung Email App
 
 Testing SMTP
 =========================================================
