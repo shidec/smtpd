@@ -6,7 +6,10 @@ import (
 	"net/textproto"
 	"regexp"
 	"strings"
+	"strconv"
+
 	"github.com/shidec/smtpd/data"
+	"github.com/shidec/smtpd/log"
 )
 
 var registeredFetchParams []fetchParamDefinition
@@ -33,10 +36,94 @@ func init() {
 	registerFetchParam("BODY(?:\\.PEEK)?"+"\\[HEADER\\.FIELDS \\(([A-z\\s-]+)\\)\\]", fetchHeaderSpecificFields)
 	registerFetchParam("BODY(?:\\.PEEK)?\\[TEXT\\]", fetchBody)
 	registerFetchParam("BODY(?:\\.PEEK)?\\[\\]", fetchFullText)
+	registerFetchParam("BODYSTRUCTURE", fetchBodyStructure)
+
 }
 
+// FetchBodyStructure computes a message's body structure from its content.
+//func fetchBodyStructure(e *message.Entity, extended bool) (*imap.BodyStructure, error) {
+func fetchBodyStructure(params string, m data.Message, peekOnly bool) string {	
+	if len(m.Attachments) == 0 {
+		if len(m.MIME.Parts) == 1 {
+			content := strings.Split(m.MIME.Parts[0].ContentType, "/")
+			return  fmt.Sprintf("BODYSTRUCTURE (\"%s\" \"%s\" (\"CHARSET\" \"%s\") NIL NIL \"QUOTED-PRINTABLE\" %d %d NIL NIL NIL NIL)",
+				strings.ToUpper(content[0]), 
+				strings.ToUpper(content[1]), 
+				strings.ToUpper(m.MIME.Parts[0].Charset), 
+				m.MIME.Parts[0].Size,
+				m.MIME.Parts[0].Lines)
+		} else {
+			content := strings.Split(m.MIME.Parts[0].ContentType, "/")
 
+			result := "BODYSTRUCTURE("
+			for _, part := range m.MIME.Parts {
+				content = strings.Split(part.ContentType, "/")
+				result = result + fmt.Sprintf("(\"%s\" \"%s\" (\"CHARSET\" \"%s\") NIL NIL \"QUOTED-PRINTABLE\" %d %d NIL NIL NIL NIL)",
+				strings.ToUpper(content[0]), 
+				strings.ToUpper(content[1]), 
+				strings.ToUpper(part.Charset), 
+				part.Size, 
+				part.Lines) 
+			}
+			return result + fmt.Sprintf("\"ALTERNATIVE\" (\"BOUNDARY\" \"%s\") NIL NIL NIL)", m.MIME.Parts[0].Boundary)
+		}
+	}else{
+		if len(m.MIME.Parts) == 1 {
+			content := strings.Split(m.MIME.Parts[0].ContentType, "/")
 
+			result := "BODYSTRUCTURE("
+			result = result + fmt.Sprintf("(\"%s\" \"%s\" (\"CHARSET\" \"%s\") NIL NIL \"QUOTED-PRINTABLE\" %d %d NIL NIL NIL NIL)",
+				strings.ToUpper(content[0]), 
+				strings.ToUpper(content[1]), 
+				strings.ToUpper(m.MIME.Parts[0].Charset), 
+				m.MIME.Parts[0].Size, 
+				m.MIME.Parts[0].Lines)
+
+			for _, att := range m.Attachments {
+				content = strings.Split(att.ContentType, "/")
+				result = result + fmt.Sprintf("(\"%s\" \"%s\" (\"NAME\" \"%s\") NIL NIL \"%s\" %d NIL (\"attachment\" (\"FILENAME\" \"%s\" \"SIZE\" \"%d\")) NIL NIL)",
+					strings.ToUpper(content[0]), 
+					strings.ToUpper(content[1]), 
+					strings.ToUpper(att.FileName), 
+					strings.ToUpper(att.TransferEncoding), 
+					att.Size, 
+					strings.ToUpper(att.FileName), 
+					att.Size) 
+			}
+			return result + fmt.Sprintf("\"MIXED\" (\"BOUNDARY\" \"%s\") NIL NIL NIL)", m.Attachments[0].Boundary)
+		} else {
+			var content []string
+
+			result := "BODYSTRUCTURE(("
+			for _, part := range m.MIME.Parts {
+				content = strings.Split(part.ContentType, "/")
+				result = result + fmt.Sprintf("(\"%s\" \"%s\" (\"CHARSET\" \"%s\") NIL NIL \"QUOTED-PRINTABLE\" %d %d NIL NIL NIL NIL)",
+				strings.ToUpper(content[0]), 
+				strings.ToUpper(content[1]), 
+				strings.ToUpper(part.Charset), 
+				part.Size, 
+				part.Lines) 
+			}
+			result = result + fmt.Sprintf("\"ALTERNATIVE\" (\"BOUNDARY\" \"%s\") NIL NIL NIL)", m.MIME.Parts[0].Boundary)
+			result = result + ")"
+
+			for _, att := range m.Attachments {
+				content = strings.Split(att.ContentType, "/")
+				result = result + fmt.Sprintf("(\"%s\" \"%s\" (\"NAME\" \"%s\") NIL NIL \"%s\" %d NIL (\"attachment\" (\"FILENAME\" \"%s\" \"SIZE\" \"%d\")) NIL NIL)",
+					strings.ToUpper(content[0]), 
+					strings.ToUpper(content[1]), 
+					strings.ToUpper(att.FileName), 
+					strings.ToUpper(att.TransferEncoding), 
+					att.Size, 
+					strings.ToUpper(att.FileName), 
+					att.Size) 
+			}
+			return result + fmt.Sprintf("\"MIXED\" (\"BOUNDARY\" \"%s\") NIL NIL NIL)", m.Attachments[0].Boundary)
+		}
+	}
+
+	return ""
+}
 
 
 func fetch(params string, m data.Message) (string, error) {
@@ -126,7 +213,6 @@ func fetchHeaders(param string, m data.Message, peekOnly bool) string {
 	return fmt.Sprintf("BODY%s[HEADER] {%d}\r\n%s", peekStr, hdrLen, hdr)
 }
 
-
 func fetchHeaderSpecificFields(param string, m data.Message, peekOnly bool) string {
 	if !peekOnly {
 		fmt.Printf("TODO: Peek not requested, mark all as non-recent\n")
@@ -140,6 +226,10 @@ func fetchHeaderSpecificFields(param string, m data.Message, peekOnly bool) stri
 		// If the key exists in the headers, copy it over
 		if v, ok := hdrs[key]; ok {
 			if len(v) > 0 {
+				log.LogTrace("fetchHeaders:" + key + ":" + strconv.Itoa(len(v)))
+				for _ , vv := range v {
+					log.LogTrace("fetchHeader:" + vv)
+				}
     			requestedHeaders.Add(key, v[0])
     		}
 		}
@@ -169,3 +259,15 @@ func fetchFullText(param string, m data.Message, peekOnly bool) string {
 	return fmt.Sprintf("BODY[] {%d}\r\n%s",
 		mailLen, mail)
 }
+
+/*
+func ContentType(h map[string][]string) (t string, params map[string]string, err error) {
+	val := data.getMapValue(h, "Content-Type")
+	if val == "" {
+		return "text/plain", nil, nil
+	}
+
+	return parseHeaderWithParams(val[0])
+	
+}
+*/

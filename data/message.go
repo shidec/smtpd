@@ -64,6 +64,7 @@ type MIMEBody struct {
 }
 
 type MIMEPart struct {
+	Boundary         string
 	Headers          map[string][]string
 	Body             string
 	FileName         string
@@ -73,9 +74,11 @@ type MIMEPart struct {
 	TransferEncoding string
 	Disposition      string
 	Size             int
+	Lines            int
 }
 
 type Attachment struct {
+	Boundary         string
 	Id               string
 	Body             string
 	FileName         string
@@ -175,8 +178,6 @@ func ParseSMTPMessage(mongo *MongoDB, m *config.SMTPMessage, hostname string, mi
 	return msg
 }
 
-// db.messages.find({ to:{ $elemMatch: { mailbox:"bob" } } })
-// db.messages.find( { 'from.mailbox': "alex" } )
 func PathFromString(path string) *Path {
 	relays := make([]string, 0)
 	email := path
@@ -251,7 +252,9 @@ func ParseMIME(MIMEBody *MIMEBody, reader io.Reader, boundary string, message *M
 			ParseMIME(MIMEBody, mrp, mparams["boundary"], message)
 		} else {
 			if n, body, err := Partbuf(mrp); err == nil {
-				part := &MIMEPart{Size: int(n), Headers: mrp.Header, Body: string(body), FileName: ""}
+				sbody := string(body)
+				lines := strings.Count(sbody, "\r\n") + 1
+				part := &MIMEPart{Boundary: boundary, Size: int(n), Lines: lines, Headers: mrp.Header, Body: sbody, FileName: ""}
 				// Disposition is optional
 				part.Disposition = disposition
 				part.ContentType = mediatype
@@ -275,6 +278,7 @@ func ParseMIME(MIMEBody *MIMEBody, reader io.Reader, boundary string, message *M
 					log.LogTrace("Found attachment: '%s'", disposition)
 					//db.messages.find({ 'attachments.id': "54200a938b1864264c000005" }, {"attachments.$" : 1})
 					attachment := &Attachment{
+						Boundary:          boundary,
 						Id:               bson.NewObjectId().Hex(),
 						Body:             string(body),
 						FileName:         part.FileName,
@@ -459,4 +463,27 @@ func bodyIsHTML(mr *mail.Message) bool {
 	}
 
 	return false
+}
+
+func getMapValues(m map[string][]string, key string) []string {
+	if val, ok := m[key]; ok {
+		return val
+	}
+	return nil
+}
+
+func getMapValue(m map[string][]string, key string) string {
+	if val, ok := m[key]; ok {
+		if val == nil {
+			return ""
+		}
+		
+		if len(val) == 0 {
+			return ""
+		}
+		
+		return val[0]
+	}
+
+	return ""
 }

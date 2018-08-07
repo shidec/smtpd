@@ -133,8 +133,8 @@ func (mongo *MongoDB) Load(id string) (*Message, error) {
 	return result, nil
 }
 
-func (mongo *MongoDB) TotalErr(username string) (int, error) {
-	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username}).Count()
+func (mongo *MongoDB) TotalErr(username, domain string) (int, error) {
+	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
@@ -142,8 +142,8 @@ func (mongo *MongoDB) TotalErr(username string) (int, error) {
 	return total, err
 }
 
-func (mongo *MongoDB) Total(username string) int {
-	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username}).Count()
+func (mongo *MongoDB) Total(username, domain string) int {
+	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
@@ -151,19 +151,19 @@ func (mongo *MongoDB) Total(username string) int {
 	return total
 }
 
-func (mongo *MongoDB) Unread(username string) int {
-	total, _ := mongo.Messages.Find(bson.M{"to.mailbox": username,"unread": true}).Count()
+func (mongo *MongoDB) Unread(username, domain string) int {
+	total, _ := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain,"unread": true}).Count()
 	if total == 0 {
 		return 0
 	}
 
 	var m Message
-	mongo.Messages.Find(bson.M{"to.mailbox": username, "unread": true}).Select(bson.M{"sequence" : 1}).Sort("-sequence").Limit(1).One(&m)
+	mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain, "unread": true}).Select(bson.M{"sequence" : 1}).Sort("-sequence").Limit(1).One(&m)
 	return m.Sequence
 }
 
-func (mongo *MongoDB) UnreadCount(username string) int {
-	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username,"unread": true}).Count()
+func (mongo *MongoDB) UnreadCount(username, domain string) int {
+	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain,"unread": true}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
@@ -171,8 +171,8 @@ func (mongo *MongoDB) UnreadCount(username string) int {
 	return total
 }
 
-func (mongo *MongoDB) Recent(username string) int {
-	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username,"recent": true}).Count()
+func (mongo *MongoDB) Recent(username, domain string) int {
+	total, err := mongo.Messages.Find(bson.M{"to.mailbox": username, "to.domain": domain,"recent": true}).Count()
 	if err != nil {
 		log.LogError("Error loading message: %s", err)
 		total = 0
@@ -267,43 +267,43 @@ func (mongo *MongoDB) MessageSetByUID(username string, set SequenceSet) Messages
 }
 */
 
-func (mongo *MongoDB) MessageSetByUID(username string, set SequenceSet) Messages {
+func (mongo *MongoDB) MessageSetByUID(username, domain string, set SequenceSet) Messages {
 	var msgs Messages
 
 	// If the mailbox is empty, return empty array
-	count, _ := mongo.Messages.Find(bson.M{"to.mailbox":username}).Count()
+	count, _ := mongo.Messages.Find(bson.M{"to.mailbox":username, "to.domain": domain}).Count()
 	if count == 0 {
 		return msgs
 	}
 
 	for _, msgRange := range set {
-		msgs = append(msgs, mongo.messageRangeBy(username, msgRange)...)
+		msgs = append(msgs, mongo.messageRangeBy(username, domain, msgRange)...)
 	}
 	return msgs
 }
 
-func (mongo *MongoDB) MessageSetBySequenceNumber(username string, set SequenceSet) Messages {
+func (mongo *MongoDB) MessageSetBySequenceNumber(username, domain string, set SequenceSet) Messages {
 	var msgs Messages
-	count , _ := mongo.Messages.Find(bson.M{"to.mailbox":username}).Count()
+	count , _ := mongo.Messages.Find(bson.M{"to.mailbox":username, "to.domain": domain}).Count()
 	if count == 0 {
 		return msgs
 	}
 	// For each sequence range in the sequence set
 	for _, msgRange := range set {
 		fmt.Printf("Range:" + string(msgRange.Min) + ":" + string(msgRange.Max))	
-		msgs = append(msgs, mongo.messageRangeBy(username, msgRange)...)
+		msgs = append(msgs, mongo.messageRangeBy(username, domain, msgRange)...)
 	}
 	return msgs
 }
 
-func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Messages {
+func (mongo *MongoDB) messageRangeBy(username, domain string, seqRange SequenceRange) Messages {
 	msgs := Messages {} //make([]Message, 0)
 	// If Min is "*", meaning the last UID in the mailbox, Max should
 	// always be Nil
 	if seqRange.Min.Last() {
 		fmt.Printf("messageRangeBy:last")
 		msg := Message{}
-		mongo.Messages.Find(bson.M{"to.mailbox" : username}).Sort("-sequence").Limit(1).One(&msg)
+		mongo.Messages.Find(bson.M{"to.mailbox" : username, "to.domain": domain}).Sort("-sequence").Limit(1).One(&msg)
 		msgs = append(msgs, msg)		
 		return msgs
 	}
@@ -319,7 +319,7 @@ func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Me
 		var uid uint32
 		// Fetch specific message by sequence number
 		uid, _ = seqRange.Min.Value()
-		msg, err := mongo.MessageByUID(username, uid)
+		msg, err := mongo.MessageByUID(username, domain, uid)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err.Error())
 			return msgs
@@ -332,7 +332,7 @@ func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Me
 	max, err := seqRange.Max.Value()
 	if seqRange.Max.Last() {
 		ms := Messages {}
-		mongo.Messages.Find(bson.M{"to.mailbox" : username, "sequence" : bson.M{"$gte": min}}).Sort("-sequence").All(&ms)
+		mongo.Messages.Find(bson.M{"to.mailbox" : username, "to.domain": domain, "sequence" : bson.M{"$gte": min}}).Sort("-sequence").All(&ms)
 		for _, msg := range ms {
 			msgs = append(msgs, msg)	
 		}
@@ -340,7 +340,7 @@ func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Me
 		return msgs
 	} else {
 		ms := Messages {}
-		mongo.Messages.Find(bson.M{"to.mailbox" : username, "sequence" : bson.M{"$gte" : min, "$lte" : max}}).Sort("-sequence").All(&ms)
+		mongo.Messages.Find(bson.M{"to.mailbox" : username, "to.domain": domain, "sequence" : bson.M{"$gte" : min, "$lte" : max}}).Sort("-sequence").All(&ms)
 
 		for _, msg := range ms {
 			msgs = append(msgs, msg)	
@@ -349,9 +349,9 @@ func (mongo *MongoDB) messageRangeBy(username string, seqRange SequenceRange) Me
 	return msgs
 }
 
-func (mongo *MongoDB) MessageByUID(username string, uid uint32) (Message, error) {
+func (mongo *MongoDB) MessageByUID(username, domain string, uid uint32) (Message, error) {
 	msg := Message{}
-	err := mongo.Messages.Find(bson.M{"to.mailbox" : username, "sequence" : uid}).One(&msg);
+	err := mongo.Messages.Find(bson.M{"to.mailbox" : username, "to.domain": domain, "sequence" : uid}).One(&msg);
 	if err == nil {
 		return msg, nil
 	}
@@ -359,7 +359,7 @@ func (mongo *MongoDB) MessageByUID(username string, uid uint32) (Message, error)
 	return msg, err
 }
 
-func (mongo *MongoDB) Pop3GetStat(username string, domain string) (int, int, error) {
+func (mongo *MongoDB) Pop3GetStat(username, domain string) (int, int, error) {
 	msg := StatQuery{}
 
 	err := mongo.Messages.Pipe([]bson.M{bson.M{"$match": bson.M{"to.mailbox": username, "to.domain": domain}},

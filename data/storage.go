@@ -179,31 +179,31 @@ func (ds *DataStore) NextId(table string) int {
 }
 
 func (ds *DataStore) TotalErr(username string) (int, error) {
-	return ds.Storage.(*MongoDB).TotalErr(username)
+	return ds.Storage.(*MongoDB).TotalErr(username, ds.Config.Domain)
 }
 
 func (ds *DataStore) Total(username string) int {
-	return ds.Storage.(*MongoDB).Total(username)
+	return ds.Storage.(*MongoDB).Total(username, ds.Config.Domain)
 }
 
 func (ds *DataStore) Unread(username string) int {
-	return ds.Storage.(*MongoDB).Unread(username)
+	return ds.Storage.(*MongoDB).Unread(username, ds.Config.Domain)
 }
 
 func (ds *DataStore) UnreadCount(username string) int {
-	return ds.Storage.(*MongoDB).UnreadCount(username)
+	return ds.Storage.(*MongoDB).UnreadCount(username, ds.Config.Domain)
 }
 
 func (ds *DataStore) Recent(username string) int {
-	return ds.Storage.(*MongoDB).Recent(username)
+	return ds.Storage.(*MongoDB).Recent(username, ds.Config.Domain)
 }
 
 func (ds *DataStore) MessageSetByUID(username string, set SequenceSet) Messages {
-	return ds.Storage.(*MongoDB).MessageSetByUID(username, set)
+	return ds.Storage.(*MongoDB).MessageSetByUID(username, ds.Config.Domain, set)
 }
 
 func (ds *DataStore) MessageSetBySequenceNumber(username string, set SequenceSet) Messages {
-	return ds.Storage.(*MongoDB).MessageSetBySequenceNumber(username, set)
+	return ds.Storage.(*MongoDB).MessageSetBySequenceNumber(username, ds.Config.Domain, set)
 }
 
 // Check if email address is in greylist
