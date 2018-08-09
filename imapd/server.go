@@ -483,54 +483,71 @@ func (c *Client) uidHandler(cmd string, arg string) {
 		return
 	}
 
-	// Fetch the messages
-	re := regexp.MustCompile("(?i:FETCH) ([\\d\\:\\*\\,]+) \\(([A-z0-9\\s\\(\\)\\[\\]\\.-]+)\\)")
-	match := re.FindSubmatch([]byte(arg))
+	if strings.Index( strings.ToUpper(arg) , "STORE") >= 0 {
+		arg = strings.ToUpper(arg)
+		re := regexp.MustCompile("(STORE) ([0-9]+) (\\+FLAGS) \\(([\\s*\\\\ANSWERED|\\s*\\\\FLAGGED|\\s*\\\\DELETED|\\s*\\\\SEEN|\\s*\\\\DRAFT]*)\\)")
+		match := re.FindSubmatch([]byte(arg))
+		if match != nil && len(match) > 3 {
 
-	seqSet, err := data.InterpretSequenceSet(string(match[1]))
-	if err != nil {
-		c.Write(c.argId + " NO "+err.Error())
-		return
-	}
-
-	searchByUID := strings.ToUpper(arg) == "UID "
-	//searchByUID := cmd == "UID"
-
-	var msgs []data.Message
-	if searchByUID {
-		msgs = c.server.Store.MessageSetByUID(c.user.Username, seqSet)
-	} else {
-		msgs = c.server.Store.MessageSetBySequenceNumber(c.user.Username, seqSet)
-	}	
-	
-	fetchParamString := string(match[2])
-	if searchByUID && !strings.Contains(fetchParamString, "UID") {
-		fetchParamString += " UID"
-	}
-
-	for _, msg := range msgs {
-		fetchParams, err := fetch(fetchParamString, msg)
-		if err != nil {
-			if err == ErrUnrecognisedParameter {
-				c.Write(c.argId + " BAD Unrecognised Parameter")
-				return
+			log.LogTrace("match:a:" + strconv.Itoa(len(match)))
+			for _, v := range match {
+				log.LogTrace("match:*:" + string(v))
 			}
+			c.server.Store.MessageSetFlags(c.user.Username, string(match[1]))
+			c.Write(c.argId + " OK UID FETCH Completed")
+		}else{
+			c.Write(c.argId + " BAD Invalid ID")
+		}
+	}else{
+		// Fetch the messages
+		re := regexp.MustCompile("(?i:FETCH) ([\\d\\:\\*\\,]+) \\(([A-z0-9\\s\\(\\)\\[\\]\\.-]+)\\)")
+		match := re.FindSubmatch([]byte(arg))
 
-			c.Write(c.argId + " BAD")
+		seqSet, err := data.InterpretSequenceSet(string(match[1]))
+		if err != nil {
+			c.Write(c.argId + " NO "+err.Error())
 			return
 		}
 
-		c.server.Store.RemoveRecent(msg)
+		searchByUID := strings.ToUpper(arg) == "UID "
+		//searchByUID := cmd == "UID"
 
-		fullReply := fmt.Sprintf("* %d FETCH (%s)", msg.Sequence, fetchParams)
+		var msgs []data.Message
+		if searchByUID {
+			msgs = c.server.Store.MessageSetByUID(c.user.Username, seqSet)
+		} else {
+			msgs = c.server.Store.MessageSetBySequenceNumber(c.user.Username, seqSet)
+		}	
+		
+		fetchParamString := string(match[2])
+		if searchByUID && !strings.Contains(fetchParamString, "UID") {
+			fetchParamString += " UID"
+		}
 
-		c.Write(fullReply)
-	}
+		for _, msg := range msgs {
+			fetchParams, err := fetch(fetchParamString, msg)
+			if err != nil {
+				if err == ErrUnrecognisedParameter {
+					c.Write(c.argId + " BAD Unrecognised Parameter")
+					return
+				}
 
-	if searchByUID {
-		c.Write(c.argId + " OK UID FETCH Completed")
-	} else {
-		c.Write(c.argId + " OK FETCH Completed")
+				c.Write(c.argId + " BAD")
+				return
+			}
+
+			c.server.Store.RemoveRecent(msg)
+
+			fullReply := fmt.Sprintf("* %d FETCH (%s)", msg.Sequence, fetchParams)
+
+			c.Write(fullReply)
+		}
+
+		if searchByUID {
+			c.Write(c.argId + " OK UID FETCH Completed")
+		} else {
+			c.Write(c.argId + " OK FETCH Completed")
+		}
 	}
 }
 

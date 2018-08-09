@@ -198,6 +198,10 @@ func (ds *DataStore) Recent(username string) int {
 	return ds.Storage.(*MongoDB).Recent(username, ds.Config.Domain)
 }
 
+func (ds *DataStore) MessageSetFlags(username string, seq string) {
+	ds.Storage.(*MongoDB).MessageSetFlags(username, ds.Config.Domain, seq)
+}
+
 func (ds *DataStore) MessageSetByUID(username string, set SequenceSet) Messages {
 	return ds.Storage.(*MongoDB).MessageSetByUID(username, ds.Config.Domain, set)
 }

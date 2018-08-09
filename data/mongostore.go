@@ -267,6 +267,11 @@ func (mongo *MongoDB) MessageSetByUID(username string, set SequenceSet) Messages
 }
 */
 
+func (mongo *MongoDB) MessageSetFlags(username, domain, seq string) {
+	mongo.Messages.Update(bson.M{"to.mailbox":username, "to.domain": domain, "sequence": seq}, 
+		bson.M{"$set": bson.M{"recent": false, "unread": false}})
+}
+
 func (mongo *MongoDB) MessageSetByUID(username, domain string, set SequenceSet) Messages {
 	var msgs Messages
 
