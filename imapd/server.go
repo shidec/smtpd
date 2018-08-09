@@ -55,6 +55,7 @@ var commands = map[string]bool{
 	"UID":     true,
 	"QUIT":     true,
 	"APPEND":     true,
+	"NAMESPACE":     true,
 }
 
 // Real server code starts here
@@ -293,7 +294,7 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 	c.logTrace("In state %d, got command '%s', args '%s'", c.state, cmd, arg)
 
 	if cmd == "" || !commands[cmd] {
-		c.Write(fmt.Sprintf("%s Syntax error, %v command unrecognized", c.argId, cmd))
+		c.Write(fmt.Sprintf("%s NO %v command unrecognized", c.argId, cmd))
 		c.logWarn("Unrecognized command: %v", cmd)
 	}
 
@@ -339,6 +340,8 @@ func (c *Client) handle(hdr string, cmd string, arg string, line string) {
 		c.subHandler(cmd, arg)
 	case "UNSUBSCRIBE":
 		c.unsubHandler(cmd, arg)		
+	case "NAMESPACE":
+		c.nsHandler(cmd, arg)	
 	case "STARTTLS":
 		c.tlsHandler()
 		//return
@@ -377,6 +380,16 @@ func (c *Client) loginHandler(cmd string, arg string) {
 func (c *Client) capabilityHandler(cmd string, arg string) {
 	c.Write("* CAPABILITY IMAP4rev1 AUTH=PLAIN")
 	c.Write(c.argId + " OK CAPABILITY completed")
+}
+
+
+func (c *Client) nsHandler(cmd string, arg string) {
+	if c.state == STATE_AUTHORIZED {
+		c.Write("* NAMESPACE ((\"\" \"/\")) NIL NIL")
+	}else{
+		c.Write("* NAMESPACE NIL NIL ((\"\" \".\"))")
+	}
+	c.Write(c.argId + " OK NAMESPACE completed")
 }
 
 func (c *Client) subHandler(cmd string, arg string) {
